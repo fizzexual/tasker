@@ -9,6 +9,8 @@ pub mod pdh;
 pub mod procinfo;
 pub mod proclist;
 pub mod procs;
+pub mod services;
 pub mod settings;
+pub mod startup;
 pub mod tree;
 pub mod wins;
