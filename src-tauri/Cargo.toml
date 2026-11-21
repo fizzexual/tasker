@@ -1,0 +1,68 @@
+[package]
+name = "fizz-task-manager"
+version = "1.0.0"
+description = "A lightweight task manager for Windows that does not lag"
+authors = ["Fizz"]
+edition = "2021"
+
+[lib]
+name = "fizz_task_manager_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-autostart = "2"
+tauri-plugin-single-instance = "2"
+tauri-plugin-window-state = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sysinfo = { version = "0.40", default-features = false, features = ["system", "disk", "network", "user"] }
+winreg = "0.56"
+png = "0.18"
+base64 = "0.22"
+
+[dependencies.windows]
+version = "0.62"
+features = [
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_System_Performance",
+  "Win32_System_Services",
+  "Win32_System_Threading",
+  "Win32_System_SystemInformation",
+  "Win32_Storage_FileSystem",
+  "Win32_UI_Shell",
+  "Win32_UI_WindowsAndMessaging",
+  "Win32_Graphics_Gdi",
+  "Win32_Graphics_Dxgi",
+  "Win32_Graphics_Dxgi_Common",
+  "Win32_Graphics_Dwm",
+  "Win32_System_Diagnostics_Debug",
+  "Win32_System_RemoteDesktop",
+  "Win32_System_ProcessStatus",
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_System_IO",
+  "Win32_System_Ioctl",
+  "Win32_NetworkManagement_IpHelper",
+  "Win32_NetworkManagement_Ndis",
+  "Win32_Networking_WinSock",
+  "Win32_System_Kernel",
+  "Win32_System_Memory",
+  "Win32_System_LibraryLoader",
+  "Win32_System_Registry",
+  "Win32_System_Com",
+]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.dev]
+opt-level = 1
