@@ -3,7 +3,9 @@
 pub mod actions;
 pub mod elevate;
 pub mod error;
+pub mod hardware;
 pub mod ntproc;
+pub mod pdh;
 pub mod procinfo;
 pub mod proclist;
 pub mod procs;
