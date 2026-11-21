@@ -14,4 +14,5 @@ pub mod services;
 pub mod settings;
 pub mod startup;
 pub mod tree;
+pub mod users;
 pub mod wins;
