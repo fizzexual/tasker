@@ -3,14 +3,12 @@
 
 import { api } from "./api";
 
-export interface MaxButton {
-  label: "Maximize" | "Restore";
-  icon: "max" | "restore";
-}
-
-/** What the middle button offers: fill the screen, or go back to the window's own size. */
-export function maxButton(maximized: boolean): MaxButton {
-  return maximized ? { label: "Restore", icon: "restore" } : { label: "Maximize", icon: "max" };
+/**
+ * What the green button offers: fill the screen, or go back to the window's own size. The dots
+ * carry no signs, so this text (tooltip and screen-reader name) is the only place it shows.
+ */
+export function maxLabel(maximized: boolean): "Maximize" | "Restore" {
+  return maximized ? "Restore" : "Maximize";
 }
 
 /**
@@ -25,10 +23,9 @@ export function initTitlebar(): void {
   if (!min || !max || !close) return;
 
   const paint = (maximized: boolean) => {
-    const b = maxButton(maximized);
-    max.dataset.icon = b.icon;
-    max.title = b.label;
-    max.setAttribute("aria-label", b.label);
+    const label = maxLabel(maximized);
+    max.title = label;
+    max.setAttribute("aria-label", label);
     // A window that fills the screen has no edge to grab, and its corner button reaches the corner.
     root.toggleAttribute("data-maximized", maximized);
   };
@@ -43,6 +40,13 @@ export function initTitlebar(): void {
       })
       .catch(() => undefined);
   };
+
+  // A window button never takes focus. Otherwise the one that was clicked keeps it, and when the
+  // window comes back from minimise the browser draws the keyboard-focus ring on it: two stray
+  // green lines in the title bar (seen by the owner, 2026-11-22).
+  for (const button of [min, max, close]) {
+    button.addEventListener("mousedown", (e) => e.preventDefault());
+  }
 
   min.addEventListener("click", () => void api.windowMinimize().catch(() => undefined));
   max.addEventListener("click", () => ask(api.windowToggleMaximize));

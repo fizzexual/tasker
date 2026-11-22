@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { maxButton } from "../src/titlebar";
+import { maxLabel } from "../src/titlebar";
 
-describe("maxButton (what the middle window button says and shows)", () => {
+describe("maxLabel (what the green window button says it will do)", () => {
   it("a normal window offers to fill the screen", () => {
-    expect(maxButton(false)).toEqual({ label: "Maximize", icon: "max" });
+    expect(maxLabel(false)).toBe("Maximize");
   });
 
   it("a window that fills the screen offers to go back to its size", () => {
-    expect(maxButton(true)).toEqual({ label: "Restore", icon: "restore" });
+    expect(maxLabel(true)).toBe("Restore");
   });
 });
