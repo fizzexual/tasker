@@ -1,4 +1,4 @@
-//! Fizz Task Manager: window, tray, hotkey, and the commands the screen calls.
+//! Tasker: window, tray, hotkey, and the commands the screen calls.
 
 pub mod actions;
 pub mod elevate;
@@ -515,7 +515,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&open, &quit])?;
     let mut tray = TrayIconBuilder::with_id("main")
-        .tooltip("Fizz Task Manager")
+        .tooltip("Tasker")
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id().as_ref() {
@@ -582,9 +582,15 @@ pub fn run() {
                 .app_config_dir()
                 .map(|d| d.join("settings.json"))
                 .unwrap_or_else(|_| PathBuf::from("settings.json"));
+            // The app had another name once. Its own "start with Windows" entry moves to the
+            // present name, so start-up keeps opening this program and not a file that is gone.
+            let carried = startup::take_old_autostart();
             let mut loaded = settings::load(&settings_path);
             // The start-up switch lives in Windows; show what is really set there.
             loaded.autostart = app.autolaunch().is_enabled().unwrap_or(loaded.autostart);
+            if carried == Some(true) && !loaded.autostart {
+                loaded.autostart = app.autolaunch().enable().is_ok();
+            }
             // An installed copy makes sure "Start with Windows" starts this copy, not an
             // older one from another folder.
             if loaded.autostart && is_installed_copy() {
@@ -707,6 +713,6 @@ pub fn run() {
 
     if let Err(e) = result {
         log_line(&format!("fatal: {e}"));
-        eprintln!("Fizz Task Manager could not start: {e}");
+        eprintln!("Tasker could not start: {e}");
     }
 }

@@ -7,6 +7,8 @@ import { bytes, count, percent0, rateFull, speed } from "./format";
 export interface Readout {
   /** "37%" */
   pct: string;
+  /** The same share as a whole number from 0 to 100, for the gauge under the readout. */
+  fill: number;
   /** The value behind it, "" when nothing is known. */
   more: string;
 }
@@ -23,22 +25,24 @@ export function usedOf(used: number, total: number): string {
 }
 
 const share = (used: number, total: number) => (total > 0 ? (used / total) * 100 : 0);
+const gauge = (v: number) => (Number.isFinite(v) ? Math.min(100, Math.max(0, Math.round(v))) : 0);
 const degrees = (t: number | null | undefined) => (t ? `${Math.round(t)} °C` : "");
 const join = (...parts: string[]) => parts.filter(Boolean).join(" · ");
 
 export function cpuReadout(s: PerfSample): Readout {
-  return { pct: percent0(s.cpu), more: s.cpu_mhz ? speed(s.cpu_mhz) : "" };
+  return { pct: percent0(s.cpu), fill: gauge(s.cpu), more: s.cpu_mhz ? speed(s.cpu_mhz) : "" };
 }
 
 export function memReadout(s: PerfSample): Readout {
-  return { pct: percent0(share(s.mem_used, s.mem_total)), more: s.mem_total > 0 ? usedOf(s.mem_used, s.mem_total) : "" };
+  const used = share(s.mem_used, s.mem_total);
+  return { pct: percent0(used), fill: gauge(used), more: s.mem_total > 0 ? usedOf(s.mem_used, s.mem_total) : "" };
 }
 
 /** The busiest graphics card. */
 export function gpuReadout(s: PerfSample): NamedReadout | null {
   if (!s.gpus.length) return null;
   const g = s.gpus.reduce((a, b) => (b.util > a.util ? b : a));
-  return { label: "GPU", pct: percent0(g.util), more: join(usedOf(g.mem_used, g.mem_total), degrees(g.temp)) };
+  return { label: "GPU", pct: percent0(g.util), fill: gauge(g.util), more: join(usedOf(g.mem_used, g.mem_total), degrees(g.temp)) };
 }
 
 /** A disk's name in samples is its number, then its drive letters: "0 C: D:". */
@@ -63,7 +67,7 @@ export function diskLabel(name: string, hw: Hardware | null): string {
 export function diskReadout(s: PerfSample, hw: Hardware | null): NamedReadout | null {
   if (!s.disks.length) return null;
   const d = s.disks.reduce((a, b) => (b.active > a.active ? b : a));
-  return { label: diskLabel(d.name, hw), pct: percent0(d.active), more: rateFull(d.read + d.write) };
+  return { label: diskLabel(d.name, hw), pct: percent0(d.active), fill: gauge(d.active), more: rateFull(d.read + d.write) };
 }
 
 export type SideKind = "cpu" | "mem" | "disk" | "net" | "gpu";

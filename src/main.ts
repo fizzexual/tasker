@@ -106,6 +106,11 @@ async function boot(): Promise<void> {
     if (chip.hidden !== !r) chip.hidden = !r;
     if (!r) return;
     setText($(`chip-${name}`), r.pct);
+    const fill = String(r.fill);
+    if (chip.dataset.fill !== fill) {
+      chip.dataset.fill = fill;
+      chip.style.setProperty("--p", fill);
+    }
     setText($(`chip-${name}-more`), r.more);
   };
 

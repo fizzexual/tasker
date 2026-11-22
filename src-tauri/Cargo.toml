@@ -1,12 +1,12 @@
 [package]
-name = "fizz-task-manager"
+name = "tasker"
 version = "1.0.0"
 description = "A lightweight task manager for Windows that does not lag"
 authors = ["Fizz"]
 edition = "2021"
 
 [lib]
-name = "fizz_task_manager_lib"
+name = "tasker_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

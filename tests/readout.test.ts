@@ -54,16 +54,16 @@ describe("usedOf (how much of how much)", () => {
 
 describe("top bar readouts: a percentage AND the real value", () => {
   it("CPU: percent and current speed", () => {
-    expect(cpuReadout(sample())).toEqual({ pct: "37%", more: "4.45 GHz" });
+    expect(cpuReadout(sample())).toEqual({ pct: "37%", fill: 37, more: "4.45 GHz" });
   });
   it("CPU: no speed known leaves the value empty, never a dash on its own", () => {
-    expect(cpuReadout(sample({ cpu_mhz: 0 }))).toEqual({ pct: "37%", more: "" });
+    expect(cpuReadout(sample({ cpu_mhz: 0 }))).toEqual({ pct: "37%", fill: 37, more: "" });
   });
   it("memory: percent and used of total", () => {
-    expect(memReadout(sample())).toEqual({ pct: "41%", more: "13.0 / 32.0 GB" });
+    expect(memReadout(sample())).toEqual({ pct: "41%", fill: 41, more: "13.0 / 32.0 GB" });
   });
   it("memory: no total is 0%, not a division by zero", () => {
-    expect(memReadout(sample({ mem_total: 0, mem_used: 0 }))).toEqual({ pct: "0%", more: "" });
+    expect(memReadout(sample({ mem_total: 0, mem_used: 0 }))).toEqual({ pct: "0%", fill: 0, more: "" });
   });
   it("GPU: the busiest one, with its memory and temperature", () => {
     const s = sample({
@@ -72,22 +72,28 @@ describe("top bar readouts: a percentage AND the real value", () => {
         { name: "Busy GPU", util: 64.6, mem_used: 6 * GB, mem_total: 8 * GB, shared_used: 0, temp: 71.2, engines: [] },
       ],
     });
-    expect(gpuReadout(s)).toEqual({ label: "GPU", pct: "65%", more: "6.0 / 8.0 GB · 71 °C" });
+    expect(gpuReadout(s)).toEqual({ label: "GPU", pct: "65%", fill: 65, more: "6.0 / 8.0 GB · 71 °C" });
   });
   it("GPU: no temperature sensor simply leaves it out", () => {
     const s = sample({ gpus: [{ name: "G", util: 5, mem_used: GB, mem_total: 4 * GB, shared_used: 0, temp: null, engines: [] }] });
-    expect(gpuReadout(s)).toEqual({ label: "GPU", pct: "5%", more: "1.0 / 4.0 GB" });
+    expect(gpuReadout(s)).toEqual({ label: "GPU", pct: "5%", fill: 5, more: "1.0 / 4.0 GB" });
   });
   it("GPU: a PC without one has no GPU readout", () => {
     expect(gpuReadout(sample({ gpus: [] }))).toBeNull();
   });
   it("disk: the busiest one, named by its kind and letter, with its transfer speed", () => {
-    expect(diskReadout(sample(), hw)).toEqual({ label: "SSD C:", pct: "28%", more: "1.5 MB/s" });
+    expect(diskReadout(sample(), hw)).toEqual({ label: "SSD C:", pct: "28%", fill: 28, more: "1.5 MB/s" });
   });
   it("disk: a spinning disk is called HDD; without hardware facts it is just a disk", () => {
     const s = sample({ disks: [{ name: "1 D:", active: 90, read: 0, write: 10 * MB, response_ms: 0 }] });
-    expect(diskReadout(s, hw)).toEqual({ label: "HDD D:", pct: "90%", more: "10.0 MB/s" });
-    expect(diskReadout(s, null)).toEqual({ label: "Disk D:", pct: "90%", more: "10.0 MB/s" });
+    expect(diskReadout(s, hw)).toEqual({ label: "HDD D:", pct: "90%", fill: 90, more: "10.0 MB/s" });
+    expect(diskReadout(s, null)).toEqual({ label: "Disk D:", pct: "90%", fill: 90, more: "10.0 MB/s" });
+  });
+  it("the gauge number never leaves 0 to 100, whatever the reading says", () => {
+    expect(cpuReadout(sample({ cpu: 104.2 })).fill).toBe(100);
+    expect(cpuReadout(sample({ cpu: -3 })).fill).toBe(0);
+    expect(cpuReadout(sample({ cpu: Number.NaN })).fill).toBe(0);
+    expect(memReadout(sample({ mem_used: 40 * GB, mem_total: 32 * GB })).fill).toBe(100);
   });
   it("disk: none at all has no readout", () => {
     expect(diskReadout(sample({ disks: [] }), hw)).toBeNull();

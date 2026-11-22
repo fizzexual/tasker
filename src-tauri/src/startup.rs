@@ -359,6 +359,31 @@ pub fn set_enabled(roots: &Roots, id: &str, enabled: bool) -> CmdResult<bool> {
     Ok(is_enabled(read_approved(roots, source, name).as_deref()))
 }
 
+/// The name this app's own "start with Windows" entry carried before the app was renamed.
+pub const OLD_APP_NAME: &str = "Fizz Task Manager";
+
+/// Clears the entry an earlier name of this app left behind, together with its on/off switch.
+/// `None`: there was none. `Some(on)`: there was one, switched on or off, so the caller registers
+/// the app under its present name only when the owner had it on.
+pub fn take_old_own_entry(run: &RegKey, approved: Option<&RegKey>, old_name: &str) -> Option<bool> {
+    run.get_raw_value(old_name).ok()?;
+    let switch = approved.and_then(|key| key.get_raw_value(old_name).ok());
+    let on = is_enabled(switch.as_ref().map(|v| &v.bytes[..]));
+    run.delete_value(old_name).ok()?;
+    if let Some(key) = approved {
+        let _ = key.delete_value(old_name);
+    }
+    Some(on)
+}
+
+/// The same, on this user's real start-up list. Touches only the entry named [`OLD_APP_NAME`].
+pub fn take_old_autostart() -> Option<bool> {
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    let run = hkcu.open_subkey_with_flags(RUN, KEY_READ | KEY_SET_VALUE).ok()?;
+    let approved = hkcu.open_subkey_with_flags(format!(r"{APPROVED}\Run"), KEY_READ | KEY_SET_VALUE).ok();
+    take_old_own_entry(&run, approved.as_ref(), OLD_APP_NAME)
+}
+
 fn io_error(e: &std::io::Error, what: &str) -> CmdError {
     match e.raw_os_error() {
         Some(code) => CmdError::from_win32(code as u32, what),
@@ -380,7 +405,7 @@ mod tests {
     impl Scratch {
         fn new(tag: &str) -> Scratch {
             let unique = format!("{tag}-{}-{:?}", std::process::id(), std::thread::current().id());
-            let key_path = format!(r"Software\FizzTaskManagerTest\{unique}");
+            let key_path = format!(r"Software\TaskerTest\{unique}");
             let dir = std::env::temp_dir().join(format!("ftm-startup-{unique}"));
             std::fs::create_dir_all(dir.join("user")).unwrap();
             std::fs::create_dir_all(dir.join("common")).unwrap();
@@ -412,6 +437,44 @@ mod tests {
             let _ = RegKey::predef(HKEY_CURRENT_USER).delete_subkey_all(&self.key_path);
             let _ = std::fs::remove_dir_all(&self.dir);
         }
+    }
+
+    /// Two empty keys inside the scratch area, standing in for the Run list and its switches.
+    fn old_name_keys(s: &Scratch) -> (RegKey, RegKey) {
+        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+        let (run, _) = hkcu.create_subkey(format!(r"{}\oldrun", s.key_path)).unwrap();
+        let (approved, _) = hkcu.create_subkey(format!(r"{}\oldapproved", s.key_path)).unwrap();
+        (run, approved)
+    }
+
+    #[test]
+    fn the_entry_under_the_old_app_name_is_cleared_once() {
+        let s = Scratch::new("oldname");
+        let (run, approved) = old_name_keys(&s);
+        run.set_value("Other App", &"other.exe".to_string()).unwrap();
+
+        assert_eq!(take_old_own_entry(&run, Some(&approved), OLD_APP_NAME), None, "nothing was registered under the old name");
+
+        run.set_value(OLD_APP_NAME, &r"C:\old\Old.exe --hidden".to_string()).unwrap();
+        assert_eq!(take_old_own_entry(&run, Some(&approved), OLD_APP_NAME), Some(true), "no switch stored means it was on");
+        assert!(run.get_raw_value(OLD_APP_NAME).is_err(), "the old entry is gone");
+        assert_eq!(take_old_own_entry(&run, Some(&approved), OLD_APP_NAME), None, "the next start finds nothing to do");
+
+        let other: String = run.get_value("Other App").unwrap();
+        assert_eq!(other, "other.exe", "another program's entry is never touched");
+    }
+
+    #[test]
+    fn an_old_entry_the_owner_had_switched_off_is_reported_as_off() {
+        let s = Scratch::new("oldoff");
+        let (run, approved) = old_name_keys(&s);
+        run.set_value(OLD_APP_NAME, &r"C:\old\Old.exe --hidden".to_string()).unwrap();
+        let off = RegValue { vtype: REG_BINARY, bytes: approved_value(false, 1).to_vec().into() };
+        approved.set_raw_value(OLD_APP_NAME, &off).unwrap();
+
+        assert_eq!(take_old_own_entry(&run, Some(&approved), OLD_APP_NAME), Some(false), "off stays off: the caller must not switch start-up on");
+        assert!(run.get_raw_value(OLD_APP_NAME).is_err(), "the old entry is gone");
+        assert!(approved.get_raw_value(OLD_APP_NAME).is_err(), "and so is its switch");
     }
 
     #[test]

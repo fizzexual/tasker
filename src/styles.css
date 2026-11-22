@@ -1,8 +1,9 @@
 /*
-  Fizz Task Manager — "carbon and citrus".
-  A graphite instrument panel with one signal colour (lime). Numbers are set in Bahnschrift, the
-  DIN-style font that ships with Windows, so nothing is downloaded or bundled. Every resource keeps
-  its own colour everywhere: CPU lime, memory violet, disk teal, network amber, GPU blue.
+  Tasker — black terminal.
+  The colours of a system monitor in a terminal: black, white text, one green for "on" and for
+  filled bars, blue and magenta as the second and third colours. Numbers are set in Bahnschrift,
+  the DIN-style font that ships with Windows, so nothing is downloaded or bundled. Every part keeps
+  its own colour everywhere: CPU green, memory magenta, disk cyan, network yellow, GPU blue.
 */
 /* Bahnschrift as installed with Windows, given the same line metrics as Segoe UI so a number and
    the name beside it sit on one line (measured: without this the digits ride 2 px high). */
@@ -25,33 +26,33 @@
 
 :root {
   color-scheme: light dark;
-  --bg: #efede8;
-  --panel: #faf9f6;
+  --bg: #f1f1ef;
+  --panel: #fafaf9;
   --raised: #ffffff;
-  --inset: #f1efea;
-  --text: #16181b;
-  --muted: #666b73;
-  --faint: #979ba1;
-  --border: #d9d5cb;
-  --line: rgba(0, 0, 0, 0.055);
-  --hover: #efede6;
-  --sel: #e7f2ba;
-  --accent: #4a6800;
-  --accent-fill: #c6f135;
-  --accent-text: #141a00;
-  --danger: #b3261e;
+  --inset: #efefec;
+  --text: #111111;
+  --muted: #5f6368;
+  --faint: #9a9a9a;
+  --border: #d6d6d2;
+  --line: rgba(0, 0, 0, 0.06);
+  --hover: #ececea;
+  --sel: #dff0cf;
+  --accent: #3a7d00;
+  --accent-fill: #4e9a06;
+  --accent-text: #ffffff;
+  --danger: #cc0000;
   --danger-bg: #fbe9e7;
-  --warn: #a85b00;
-  --heat: 95, 134, 0;
-  --c-cpu: #5f8600;
-  --c-mem: #7446d8;
-  --c-disk: #0d8f80;
-  --c-net: #c26a00;
-  --c-gpu: #1273c4;
-  --grid: #e4e1d9;
-  --scroll: #c9c5ba;
-  --shadow: rgba(40, 36, 20, 0.22);
-  --glow: rgba(198, 241, 53, 0.35);
+  --warn: #75507b;
+  --heat: 78, 154, 6;
+  --c-cpu: #4e9a06;
+  --c-mem: #75507b;
+  --c-disk: #06989a;
+  --c-net: #a88700;
+  --c-gpu: #3465a4;
+  --grid: #e3e3df;
+  --scroll: #c8c8c4;
+  --shadow: rgba(0, 0, 0, 0.22);
+  --glow: rgba(78, 154, 6, 0.2);
   --row: 26px;
   --font-ui: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
   --font-num: "Fizz Num", "Bahnschrift", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
@@ -60,64 +61,64 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #0c0e11;
-    --panel: #111418;
-    --raised: #181c21;
-    --inset: #0a0b0e;
-    --text: #e8ebee;
-    --muted: #8a93a0;
-    --faint: #5a636e;
-    --border: #242a31;
-    --line: rgba(255, 255, 255, 0.045);
-    --hover: #171b21;
-    --sel: #1d2511;
-    --accent: #c6f135;
-    --accent-fill: #c6f135;
-    --accent-text: #111500;
-    --danger: #ff6b5e;
-    --danger-bg: #2c1512;
-    --warn: #ffa94d;
-    --heat: 198, 241, 53;
-    --c-cpu: #c6f135;
-    --c-mem: #b594ff;
-    --c-disk: #4fd6c4;
-    --c-net: #ffa94d;
-    --c-gpu: #5cb8ff;
-    --grid: #1c2127;
-    --scroll: #2c333b;
-    --shadow: rgba(0, 0, 0, 0.6);
-    --glow: rgba(198, 241, 53, 0.22);
+    --bg: #000000;
+    --panel: #070707;
+    --raised: #151515;
+    --inset: #0b0b0b;
+    --text: #f4f4f4;
+    --muted: #a9a9a9;
+    --faint: #6b6b6b;
+    --border: #2b2b2b;
+    --line: rgba(255, 255, 255, 0.07);
+    --hover: #171717;
+    --sel: #12260a;
+    --accent: #4e9a06;
+    --accent-fill: #4e9a06;
+    --accent-text: #ffffff;
+    --danger: #ef2929;
+    --danger-bg: #2a0808;
+    --warn: #ad7fa8;
+    --heat: 78, 154, 6;
+    --c-cpu: #4e9a06;
+    --c-mem: #ad7fa8;
+    --c-disk: #06989a;
+    --c-net: #c4a000;
+    --c-gpu: #3f74b8;
+    --grid: #1c1c1c;
+    --scroll: #3a3a3a;
+    --shadow: rgba(0, 0, 0, 0.75);
+    --glow: rgba(78, 154, 6, 0.16);
   }
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #0c0e11;
-  --panel: #111418;
-  --raised: #181c21;
-  --inset: #0a0b0e;
-  --text: #e8ebee;
-  --muted: #8a93a0;
-  --faint: #5a636e;
-  --border: #242a31;
-  --line: rgba(255, 255, 255, 0.045);
-  --hover: #171b21;
-  --sel: #1d2511;
-  --accent: #c6f135;
-  --accent-fill: #c6f135;
-  --accent-text: #111500;
-  --danger: #ff6b5e;
-  --danger-bg: #2c1512;
-  --warn: #ffa94d;
-  --heat: 198, 241, 53;
-  --c-cpu: #c6f135;
-  --c-mem: #b594ff;
-  --c-disk: #4fd6c4;
-  --c-net: #ffa94d;
-  --c-gpu: #5cb8ff;
-  --grid: #1c2127;
-  --scroll: #2c333b;
-  --shadow: rgba(0, 0, 0, 0.6);
-  --glow: rgba(198, 241, 53, 0.22);
+  --bg: #000000;
+  --panel: #070707;
+  --raised: #151515;
+  --inset: #0b0b0b;
+  --text: #f4f4f4;
+  --muted: #a9a9a9;
+  --faint: #6b6b6b;
+  --border: #2b2b2b;
+  --line: rgba(255, 255, 255, 0.07);
+  --hover: #171717;
+  --sel: #12260a;
+  --accent: #4e9a06;
+  --accent-fill: #4e9a06;
+  --accent-text: #ffffff;
+  --danger: #ef2929;
+  --danger-bg: #2a0808;
+  --warn: #ad7fa8;
+  --heat: 78, 154, 6;
+  --c-cpu: #4e9a06;
+  --c-mem: #ad7fa8;
+  --c-disk: #06989a;
+  --c-net: #c4a000;
+  --c-gpu: #3f74b8;
+  --grid: #1c1c1c;
+  --scroll: #3a3a3a;
+  --shadow: rgba(0, 0, 0, 0.75);
+  --glow: rgba(78, 154, 6, 0.16);
 }
 :root[data-theme="light"] {
   color-scheme: light;
@@ -158,7 +159,7 @@ input {
 ::-webkit-scrollbar-thumb {
   background: var(--scroll);
   border: 2px solid transparent;
-  border-radius: 6px;
+  border-radius: 3px;
   background-clip: content-box;
 }
 ::-webkit-scrollbar-thumb:hover {
@@ -181,14 +182,15 @@ input {
   text-transform: uppercase;
 }
 
-/* ── top bar ── */
+/* ── top bar: tabs on the left, live meters on the right, one lit rail along the bottom ── */
 .topbar {
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 40px;
-  padding: 0 8px 0 6px;
-  border-bottom: 1px solid var(--border);
+  height: 44px;
+  padding: 0 8px 0 0;
+  /* The bottom line is drawn inside, so the tab and meter rails sit on it. */
+  box-shadow: inset 0 -1px 0 var(--border);
   background:
     radial-gradient(520px 90px at 0% 0%, var(--glow), transparent 70%),
     var(--panel);
@@ -197,7 +199,6 @@ input {
 .tabs {
   display: flex;
   align-self: stretch;
-  gap: 2px;
   margin-right: auto;
   min-width: 0;
   /* Never let a tab slide under the buttons beside it: if they ever do not fit, the tabs scroll. */
@@ -215,106 +216,130 @@ input {
   position: relative;
   border: 0;
   background: none;
-  padding: 0 12px;
+  padding: 0 14px;
   color: var(--muted);
   white-space: nowrap;
   font-family: var(--font-num);
   font-size: 13px;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  transition: color 0.12s;
+  transition:
+    color 0.12s,
+    background 0.12s;
 }
 .tab::after {
   content: "";
   position: absolute;
-  left: 12px;
-  right: 12px;
+  left: 0;
+  right: 0;
   bottom: 0;
-  height: 3px;
-  border-radius: 3px 3px 0 0;
+  height: 2px;
   background: var(--accent-fill);
   transform: scaleX(0);
   transition: transform 0.16s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 .tab:hover {
   color: var(--text);
+  background: var(--hover);
 }
 .tab[aria-selected="true"] {
   color: var(--text);
   font-weight: 600;
+  background: linear-gradient(to top, color-mix(in srgb, var(--accent-fill) 14%, transparent), transparent 78%);
 }
 .tab[aria-selected="true"]::after {
   transform: scaleX(1);
 }
+
+/* A meter: the name and the percentage on one line, the real value under it, and a rail along
+   the bottom edge that fills with the part's own colour. */
 .chips {
   display: flex;
-  gap: 6px;
+  align-self: stretch;
   white-space: nowrap;
 }
 .chip {
-  display: inline-flex;
-  align-items: center;
-  height: 24px;
-  padding: 0 8px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--inset);
-  color: var(--muted);
+  position: relative;
+  display: grid;
+  grid-template-columns: auto auto;
+  align-content: center;
+  align-items: baseline;
+  column-gap: 12px;
+  padding: 0 12px 2px;
+  border-left: 1px solid var(--line);
   font-family: var(--font-num);
-  font-size: 11px;
-  letter-spacing: 0.07em;
+  --mc: var(--accent-fill);
+}
+.chip:last-child {
+  border-right: 1px solid var(--line);
+}
+.chip .k {
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.09em;
   text-transform: uppercase;
 }
 .chip b {
+  justify-self: end;
+  min-width: 2.6em;
+  text-align: right;
   color: var(--text);
   font-size: 13px;
   font-weight: 600;
-  letter-spacing: 0;
+  line-height: 16px;
   font-variant-numeric: tabular-nums;
-  display: inline-block;
-  min-width: 2.7em;
-  text-align: right;
-}
-.dot {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  margin-right: 6px;
-}
-.dot-cpu {
-  background: var(--c-cpu);
-  box-shadow: 0 0 6px var(--c-cpu);
-}
-.dot-mem {
-  background: var(--c-mem);
-  box-shadow: 0 0 6px var(--c-mem);
-}
-.dot-gpu {
-  background: var(--c-gpu);
-  box-shadow: 0 0 6px var(--c-gpu);
-}
-.dot-disk {
-  background: var(--c-disk);
-  box-shadow: 0 0 6px var(--c-disk);
 }
 /* The real value behind the percentage: "4.45 GHz", "13.0 / 32.0 GB". */
 .chip .more {
-  margin-left: 7px;
-  padding-left: 7px;
-  border-left: 1px solid var(--border);
+  grid-column: 1 / -1;
   color: var(--text);
-  font-size: 12px;
+  font-size: 11px;
+  line-height: 13px;
   letter-spacing: 0.01em;
-  text-transform: none;
   font-variant-numeric: tabular-nums;
 }
 .chip .more:empty {
   display: none;
 }
+.chip::before,
+.chip::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+}
+.chip::before {
+  background: var(--line);
+}
+.chip::after {
+  background: var(--mc);
+  transform-origin: left;
+  transform: scaleX(calc(var(--p, 0) / 100));
+  transition: transform 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.m-cpu {
+  --mc: var(--c-cpu);
+}
+.m-mem {
+  --mc: var(--c-mem);
+  min-width: 112px;
+}
+.m-gpu {
+  --mc: var(--c-gpu);
+}
+.m-disk {
+  --mc: var(--c-disk);
+  /* Transfer speed changes length all the time; keep the other meters from shuffling. */
+  min-width: 100px;
+}
 /* While paused the numbers stand still: give the room to the "Paused" button instead. */
 #paused-chip:not([hidden]) ~ .chips .more {
   display: none;
+}
+#paused-chip:not([hidden]) ~ .chips .chip {
+  min-width: 0;
 }
 .badge {
   font-family: var(--font-num);
@@ -322,7 +347,7 @@ input {
   letter-spacing: 0.07em;
   text-transform: uppercase;
   padding: 3px 9px 2px;
-  border-radius: 12px;
+  border-radius: 3px;
   background: var(--accent-fill);
   color: var(--accent-text);
   white-space: nowrap;
@@ -332,7 +357,7 @@ input {
   background: none;
   width: 30px;
   height: 28px;
-  border-radius: 7px;
+  border-radius: 3px;
   display: grid;
   place-items: center;
   color: var(--muted);
@@ -359,7 +384,7 @@ input {
   background: var(--raised);
   height: 26px;
   padding: 0 11px;
-  border-radius: 7px;
+  border-radius: 3px;
   white-space: nowrap;
   transition:
     background 0.1s,
@@ -400,7 +425,7 @@ input {
 .search {
   border: 1px solid var(--border);
   background: var(--inset);
-  border-radius: 7px;
+  border-radius: 3px;
   height: 26px;
   padding: 0 9px;
   width: 220px;
@@ -639,7 +664,7 @@ main {
 }
 /* Stand-in for a program with no icon of its own: a tiny window with a title bar. */
 .noicon {
-  border-radius: 3px;
+  border-radius: 2px;
   border: 1px solid var(--faint);
   background:
     linear-gradient(var(--faint), var(--faint)) top / 100% 4px no-repeat,
@@ -725,7 +750,7 @@ main {
   -webkit-appearance: none;
   width: 36px;
   height: 20px;
-  border-radius: 10px;
+  border-radius: 3px;
   background: var(--inset);
   border: 1px solid var(--border);
   position: relative;
@@ -743,7 +768,7 @@ main {
   left: 2px;
   width: 14px;
   height: 14px;
-  border-radius: 50%;
+  border-radius: 2px;
   background: var(--faint);
   transition:
     transform 0.16s cubic-bezier(0.2, 0.8, 0.2, 1),
@@ -782,7 +807,7 @@ main {
   font-size: 16px;
   line-height: 1;
   padding: 2px 6px;
-  border-radius: 4px;
+  border-radius: 2px;
 }
 .notice .x:hover {
   background: rgba(127, 127, 127, 0.2);
@@ -856,7 +881,7 @@ main {
   background: none;
   text-align: left;
   padding: 7px 8px;
-  border-radius: 8px;
+  border-radius: 3px;
   margin-bottom: 2px;
   transition: background 0.1s;
 }
@@ -872,7 +897,7 @@ main {
 .perf-item canvas {
   width: 64px;
   height: 36px;
-  border-radius: 5px;
+  border-radius: 2px;
   background: var(--inset);
 }
 .perf-item .t {
@@ -948,7 +973,7 @@ main {
   width: 100%;
   height: 170px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 3px;
   background: var(--inset);
   display: block;
 }
@@ -963,7 +988,7 @@ main {
 .core {
   height: 30px;
   border: 1px solid var(--border);
-  border-radius: 5px;
+  border-radius: 2px;
   background:
     linear-gradient(to top, rgba(var(--heat), 0.95) 0 2px, transparent 2px) bottom / 100% var(--p, 0%) no-repeat,
     linear-gradient(to top, rgba(var(--heat), 0.26) var(--p, 0%), var(--inset) var(--p, 0%));
@@ -1014,7 +1039,7 @@ main {
 }
 .vol .bar {
   height: 6px;
-  border-radius: 3px;
+  border-radius: 2px;
   background: var(--inset);
   box-shadow: inset 0 0 0 1px var(--border);
   overflow: hidden;
@@ -1022,7 +1047,7 @@ main {
 .vol .bar i {
   display: block;
   height: 100%;
-  border-radius: 3px;
+  border-radius: 2px;
   background: var(--c-disk);
 }
 .vol .lbl {
@@ -1041,7 +1066,7 @@ main {
   overflow-y: auto;
   background: var(--raised);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 3px;
   padding: 5px;
   box-shadow:
     0 12px 32px var(--shadow),
@@ -1069,7 +1094,7 @@ main {
   background: none;
   text-align: left;
   padding: 5px 10px;
-  border-radius: 6px;
+  border-radius: 3px;
 }
 .menu button:hover:not(:disabled),
 .menu button:focus-visible {
@@ -1098,7 +1123,7 @@ main {
 /* ── dialogs ── */
 dialog {
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: 5px;
   background: var(--panel);
   color: var(--text);
   padding: 18px 20px;
@@ -1140,7 +1165,7 @@ dialog h2 {
 .seg {
   display: inline-flex;
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: 3px;
   background: var(--inset);
   padding: 2px;
   gap: 2px;
@@ -1151,7 +1176,7 @@ dialog h2 {
   background: none;
   height: 20px;
   padding: 0 9px;
-  border-radius: 5px;
+  border-radius: 2px;
   color: var(--muted);
   transition:
     background 0.1s,
@@ -1168,7 +1193,7 @@ dialog h2 {
 .hotkey {
   border: 1px solid var(--border);
   background: var(--inset);
-  border-radius: 7px;
+  border-radius: 3px;
   height: 26px;
   padding: 0 10px;
   min-width: 130px;
@@ -1230,7 +1255,7 @@ dialog h2 {
   color: var(--text);
   background: var(--inset);
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: 3px;
   height: 26px;
   padding: 0 8px;
   flex: none;
@@ -1369,41 +1394,55 @@ dialog h2 {
 }
 
 /* ── narrow windows ── */
-/* The GPU and disk readouts join the top bar when the window has the room for them. */
-@media (max-width: 1580px) {
-  .chip.wide2 {
-    display: none;
-  }
-}
-@media (max-width: 1350px) {
-  .chip.wide1 {
-    display: none;
-  }
-}
-/* Below this the long button label would push the readouts out. */
-@media (max-width: 1120px) {
+/* The header gives up room in this order as the window narrows: the long button label, the
+   spacing, the disk meter, the GPU meter, and at last all meters. "Paused" takes a meter's place.
+   Every width below was measured with the widest values a PC can show. */
+@media (max-width: 1340px) {
   .topbar .long {
     display: none;
   }
   .topbar .short {
     display: inline;
   }
+}
+@media (max-width: 1180px) {
   .tab {
     padding-left: 9px;
     padding-right: 9px;
     letter-spacing: 0.04em;
   }
-  .tab::after {
-    left: 9px;
-    right: 9px;
+  .chip {
+    padding-left: 9px;
+    padding-right: 9px;
+    column-gap: 8px;
+    min-width: 0;
   }
-  .chip .more {
-    margin-left: 6px;
-    padding-left: 6px;
+  #paused-chip:not([hidden]) ~ .chips .wide2 {
+    display: none;
   }
 }
-@media (max-width: 985px) {
-  .chip .more {
+@media (max-width: 1079px) {
+  .chip.wide2 {
+    display: none;
+  }
+}
+@media (max-width: 1010px) {
+  #paused-chip:not([hidden]) ~ .chips .wide1 {
+    display: none;
+  }
+}
+@media (max-width: 939px) {
+  .chip.wide1 {
+    display: none;
+  }
+}
+@media (max-width: 900px) {
+  #paused-chip:not([hidden]) ~ .chips {
+    display: none;
+  }
+}
+@media (max-width: 830px) {
+  .chips {
     display: none;
   }
 }
@@ -1419,7 +1458,7 @@ dialog h2 {
   /* Tightest case: five tabs, "Paused", "As admin" and the settings button on one 604 px line. */
   .topbar {
     gap: 6px;
-    padding: 0 6px 0 4px;
+    padding: 0 6px 0 0;
   }
   .topbar > .ghost {
     padding: 0 7px;
@@ -1429,10 +1468,6 @@ dialog h2 {
     padding-right: 6px;
     font-size: 12px;
     letter-spacing: 0.02em;
-  }
-  .tab::after {
-    left: 6px;
-    right: 6px;
   }
   .topbar .long {
     display: none;

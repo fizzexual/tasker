@@ -377,7 +377,7 @@ mod tests {
         let me = std::process::id();
         let path = exe_path(me).expect("own path");
         assert!(path.to_lowercase().ends_with(".exe"));
-        assert!(command_line(me).expect("own command line").contains("fizz"), "the test binary name is in it");
+        assert!(command_line(me).expect("own command line").contains("tasker"), "the test binary name is in it");
         assert!(!user_of(me).expect("own user").is_empty());
         assert_eq!(user_of(me), user_of(me), "second lookup comes from the remembered names");
         assert!(elevated(me).is_some());

@@ -309,7 +309,7 @@ mod tests {
 
     #[test]
     fn unknown_service_is_not_found() {
-        let err = act("FizzNoSuchService_1a2b3c", "start").unwrap_err();
+        let err = act("TaskerNoSuchService_1a2b3c", "start").unwrap_err();
         assert_eq!(err.code, "not-found");
     }
 

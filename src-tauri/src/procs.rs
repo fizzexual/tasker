@@ -263,7 +263,7 @@ mod tests {
         // must leave 50 and 51 alone but still end explorer's other child (60).
         let procs = vec![
             n(10, 1, 5, "explorer.exe"),
-            n(50, 10, 6, "FizzTaskManager.exe"),
+            n(50, 10, 6, "Tasker.exe"),
             n(51, 50, 7, "msedgewebview2.exe"),
             n(60, 10, 8, "other.exe"),
         ];
@@ -276,15 +276,15 @@ mod tests {
     fn a_tree_under_the_task_manager_is_ended_in_full() {
         // We (50) started a helper (70) that started its own child (71). Ending 70's tree
         // is an explicit choice and must take 71 too.
-        let procs = vec![n(50, 10, 6, "FizzTaskManager.exe"), n(70, 50, 7, "helper.exe"), n(71, 70, 8, "kid.exe")];
+        let procs = vec![n(50, 10, 6, "Tasker.exe"), n(70, 50, 7, "helper.exe"), n(71, 70, 8, "kid.exe")];
         let pids: Vec<u32> = plan_kill(&procs, 70, "helper.exe", true, 50).unwrap().iter().map(|p| p.pid).collect();
         assert_eq!(pids, vec![71, 70]);
     }
 
     #[test]
     fn ending_our_own_tree_ends_us_last() {
-        let procs = vec![n(50, 10, 6, "FizzTaskManager.exe"), n(51, 50, 7, "msedgewebview2.exe")];
-        let pids: Vec<u32> = plan_kill(&procs, 50, "FizzTaskManager.exe", true, 50).unwrap().iter().map(|p| p.pid).collect();
+        let procs = vec![n(50, 10, 6, "Tasker.exe"), n(51, 50, 7, "msedgewebview2.exe")];
+        let pids: Vec<u32> = plan_kill(&procs, 50, "Tasker.exe", true, 50).unwrap().iter().map(|p| p.pid).collect();
         assert_eq!(pids, vec![51, 50]);
     }
 
