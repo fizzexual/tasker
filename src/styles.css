@@ -182,6 +182,95 @@ input {
   text-transform: uppercase;
 }
 
+/* ── title bar: the app's own (Windows' frame is off): name on the left, window buttons on the
+   right, the whole strip drags the window ── */
+.titlebar {
+  display: flex;
+  align-items: stretch;
+  height: 30px;
+  flex: none;
+  background: var(--bg);
+}
+.titlebar .brand {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 12px;
+  font: 600 11px/1 var(--font-ui);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  color: var(--muted);
+}
+/* A terminal's block cursor, lit in the "on" green. */
+.titlebar .cursor {
+  flex: none;
+  width: 6px;
+  height: 12px;
+  background: var(--accent-fill);
+}
+.win-btns {
+  display: flex;
+  flex: none;
+}
+.win-btn {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  cursor: default;
+}
+.win-btn svg {
+  width: 10px;
+  height: 10px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+.win-btn .i-close {
+  shape-rendering: geometricPrecision;
+}
+.win-btn .i-restore,
+.win-btn[data-icon="restore"] .i-max {
+  display: none;
+}
+.win-btn[data-icon="restore"] .i-restore {
+  display: block;
+}
+.win-btn:hover {
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+  color: var(--text);
+}
+.win-btn:active {
+  background: color-mix(in srgb, var(--text) 20%, transparent);
+}
+/* Close is the one button with Windows' own red, so the hand finds it without reading. */
+.win-btn.close:hover {
+  background: #c42b1c;
+  color: #ffffff;
+}
+.win-btn.close:active {
+  background: #a3241a;
+}
+/* Another program is in front: the bar steps back, the way a Windows title bar does. */
+:root[data-inactive] .titlebar .brand,
+:root[data-inactive] .win-btn:not(:hover) {
+  color: var(--faint);
+}
+:root[data-inactive] .titlebar .cursor {
+  opacity: 0.45;
+}
+
 /* ── top bar: tabs on the left, live meters on the right, one lit rail along the bottom ── */
 .topbar {
   display: flex;

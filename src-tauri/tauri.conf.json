@@ -16,9 +16,10 @@
         "label": "main",
         "title": "Tasker",
         "width": 1200,
-        "height": 720,
+        "height": 750,
         "minWidth": 620,
-        "minHeight": 380,
+        "minHeight": 410,
+        "decorations": false,
         "visible": false,
         "center": true
       }

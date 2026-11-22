@@ -7,6 +7,7 @@ import { ProcessesTab } from "./processes";
 import { ServicesTab } from "./services";
 import { SettingsDialog } from "./settings";
 import { StartupTab } from "./startup";
+import { initTitlebar } from "./titlebar";
 import { closeMenu, installMenuDismiss, isMenuOpen, restartAsAdmin } from "./ui";
 import { UsersTab } from "./users";
 import { setText } from "./vlist";
@@ -192,6 +193,9 @@ async function boot(): Promise<void> {
   // Tell the app the screen is drawn; only now does the window appear (no white flash).
   requestAnimationFrame(() => void api.uiReady());
 }
+
+// First, and not part of boot: the window must stay closable even when the screen fails to load.
+initTitlebar();
 
 boot().catch((e) => {
   document.body.append(Object.assign(document.createElement("pre"), { textContent: `Could not start: ${String(e)}` }));

@@ -158,6 +158,8 @@ const setFlag = (p: RawProc, flag: number, on: boolean) => {
   p[16] = on ? p[16] | flag : p[16] & ~flag;
 };
 
+let mockMaximized = false;
+
 export const mockBackend: Backend = {
   async invoke<T>(cmd: string, args: Record<string, unknown> = {}): Promise<T> {
     const r = (v: unknown) => v as T;
@@ -294,6 +296,12 @@ export const mockBackend: Backend = {
       }
       case "restart_elevated":
         throw { code: "cancelled", message: "Cancelled." };
+      // A browser tab has no window of its own to maximise: the button only swaps its picture.
+      case "window_toggle_maximize":
+        mockMaximized = !mockMaximized;
+        return r(mockMaximized);
+      case "window_is_maximized":
+        return r(mockMaximized);
       default:
         return r(undefined);
     }

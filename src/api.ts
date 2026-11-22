@@ -236,4 +236,10 @@ export const api = {
     call<void>("service_action", { name, action }),
   restartElevated: () => call<void>("restart_elevated"),
   saveSettings: (settings: Settings) => call<AppStatus>("save_settings", { settings }),
+  // The app's own title bar buttons.
+  windowMinimize: () => call<void>("window_minimize"),
+  /** Returns the new state: true = now fills the screen. */
+  windowToggleMaximize: () => call<boolean>("window_toggle_maximize"),
+  windowIsMaximized: () => call<boolean>("window_is_maximized"),
+  windowClose: () => call<void>("window_close"),
 };

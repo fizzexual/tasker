@@ -17,6 +17,7 @@ pub mod settings;
 pub mod startup;
 pub mod tree;
 pub mod users;
+pub mod winframe;
 pub mod wins;
 
 use error::{CmdError, CmdResult};
@@ -185,6 +186,32 @@ fn app_status(app: AppHandle, state: State<AppState>) -> AppStatus {
 fn set_view(state: State<AppState>, tab: String) {
     // The Users tab adds up the same process rows per person.
     state.shared.update(|c| c.want_procs = tab == "processes" || tab == "users");
+}
+
+// The app draws its own title bar (the Windows frame is off), so its three buttons come here.
+
+#[tauri::command]
+fn window_minimize(window: tauri::WebviewWindow) {
+    let _ = window.minimize();
+}
+
+/// Fills the screen, or goes back to the window's own size. Returns the new state.
+#[tauri::command]
+fn window_toggle_maximize(window: tauri::WebviewWindow) -> bool {
+    let maximized = window.is_maximized().unwrap_or(false);
+    let _ = if maximized { window.unmaximize() } else { window.maximize() };
+    !maximized
+}
+
+#[tauri::command]
+fn window_is_maximized(window: tauri::WebviewWindow) -> bool {
+    window.is_maximized().unwrap_or(false)
+}
+
+/// Asks to close, exactly like Alt+F4: the close handler below decides between tray and exit.
+#[tauri::command]
+fn window_close(window: tauri::WebviewWindow) {
+    let _ = window.close();
 }
 
 /// "Refresh now" (F5): one reading at once, also while paused.
@@ -566,8 +593,12 @@ pub fn run() {
         ))
         .plugin(
             tauri_plugin_window_state::Builder::default()
+                // Not DECORATIONS: a state saved while the window still had the Windows frame
+                // would put that frame back above the app's own title bar.
                 .with_state_flags(
-                    tauri_plugin_window_state::StateFlags::all() & !tauri_plugin_window_state::StateFlags::VISIBLE,
+                    tauri_plugin_window_state::StateFlags::all()
+                        & !tauri_plugin_window_state::StateFlags::VISIBLE
+                        & !tauri_plugin_window_state::StateFlags::DECORATIONS,
                 )
                 .build(),
         )
@@ -582,6 +613,10 @@ pub fn run() {
                 .app_config_dir()
                 .map(|d| d.join("settings.json"))
                 .unwrap_or_else(|_| PathBuf::from("settings.json"));
+            // No Windows frame: keep a taskbar that hides itself reachable under the maximised window.
+            if let Some(hwnd) = app.get_webview_window("main").and_then(|w| w.hwnd().ok()) {
+                winframe::keep_taskbar_reachable(hwnd.0 as isize);
+            }
             // The app had another name once. Its own "start with Windows" entry moves to the
             // present name, so start-up keeps opening this program and not a file that is gone.
             let carried = startup::take_old_autostart();
@@ -708,6 +743,10 @@ pub fn run() {
             service_action,
             restart_elevated,
             save_settings,
+            window_minimize,
+            window_toggle_maximize,
+            window_is_maximized,
+            window_close,
         ])
         .run(tauri::generate_context!());
 
