@@ -64,13 +64,48 @@ export function drawChart(canvas: HTMLCanvasElement, series: readonly Series[], 
   }
 
   const max = opts.max > 0 ? opts.max : 1;
-  const step = w / Math.max(1, opts.capacity - 1);
   for (const s of series) {
-    const n = Math.min(s.values.length, opts.capacity);
+    const { n, from, step, x0, lead } = place(s.values.length, opts.capacity, w);
     if (n === 0) continue;
-    const from = s.values.length - n;
-    const x0 = w - (n - 1) * step;
     const y = (v: number) => h - 1 - (Math.min(Math.max(v, 0), max) / max) * (h - 2);
+    const fade = (alpha: number) => {
+      // Fades out towards the floor, so the line itself stays the thing you read.
+      if (/^#[0-9a-f]{6}$/i.test(s.color)) {
+        const g = ctx.createLinearGradient(0, 0, 0, h);
+        g.addColorStop(0, `${s.color}47`);
+        g.addColorStop(1, `${s.color}05`);
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = g;
+      } else {
+        ctx.globalAlpha = 0.16 * alpha;
+        ctx.fillStyle = s.color;
+      }
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    };
+
+    // Before the first reading: the typical level so far carried back, fainter and dashed, so a
+    // graph that has just started is not half empty and still does not pass the carried part off
+    // as measured. (Not the first reading: that one is taken while this app itself is starting.)
+    if (lead > 0) {
+      const py = y(typical(s.values.slice(from)));
+      ctx.beginPath();
+      ctx.moveTo(0, py);
+      ctx.lineTo(lead, py);
+      ctx.strokeStyle = s.color;
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([3, 4]);
+      ctx.globalAlpha = 0.45;
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+      if (s.fill) {
+        ctx.lineTo(lead, h);
+        ctx.lineTo(0, h);
+        ctx.closePath();
+        fade(0.5);
+      }
+    }
 
     ctx.beginPath();
     for (let i = 0; i < n; i++) {
@@ -88,19 +123,27 @@ export function drawChart(canvas: HTMLCanvasElement, series: readonly Series[], 
       ctx.lineTo(w, h);
       ctx.lineTo(x0, h);
       ctx.closePath();
-      // Fades out towards the floor, so the line itself stays the thing you read.
-      if (/^#[0-9a-f]{6}$/i.test(s.color)) {
-        const fade = ctx.createLinearGradient(0, 0, 0, h);
-        fade.addColorStop(0, `${s.color}47`);
-        fade.addColorStop(1, `${s.color}05`);
-        ctx.fillStyle = fade;
-        ctx.fill();
-      } else {
-        ctx.globalAlpha = 0.16;
-        ctx.fillStyle = s.color;
-        ctx.fill();
-        ctx.globalAlpha = 1;
-      }
+      fade(1);
     }
   }
+}
+
+/** The middle reading: a level one early spike cannot pull up. */
+export function typical(values: readonly number[]): number {
+  const sorted = values.filter((v) => Number.isFinite(v)).sort((a, b) => a - b);
+  if (sorted.length === 0) return 0;
+  const mid = sorted.length >> 1;
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+/**
+ * Where a line of `count` readings sits on a graph `w` wide that stands for `capacity` readings,
+ * the newest at the right edge. `lead` is the width before the first reading (0 once the history
+ * is full): the part the graph fills by carrying the first value back.
+ */
+export function place(count: number, capacity: number, w: number): { n: number; from: number; step: number; x0: number; lead: number } {
+  const n = Math.min(count, capacity);
+  const step = w / Math.max(1, capacity - 1);
+  const x0 = n >= capacity && capacity > 1 ? 0 : Math.max(0, w - Math.max(0, n - 1) * step);
+  return { n, from: count - n, step, x0, lead: n > 0 && x0 > 0.5 ? x0 : 0 };
 }
