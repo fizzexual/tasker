@@ -2,7 +2,7 @@
 // It is loaded through a DEV-only dynamic import, so none of this ships in the app.
 
 import type { AppStatus, Backend, Hardware, PerfSample, ProcDetails, ServiceInfo, Settings, StartupEntry, Tick, UserSession } from "./api";
-import { F_APP, F_ECO, F_HUNG, F_SUSPENDED, F_WINDOWS, type RawProc } from "./model";
+import { F_APP, F_ECO, F_HUNG, F_SUSPENDED, F_WINDOWS, fromRaw, type RawProc } from "./model";
 
 /** [file name, friendly name, flags] */
 const PROGRAMS: [string, string, number][] = [
@@ -64,7 +64,7 @@ let procs: RawProc[] = Array.from({ length: 420 }, (_, i) => {
     flags & F_WINDOWS && name !== "explorer.exe" ? 0 : 1,
     8,
     i * 1500,
-    START + i * 1000,
+    `${START + i * 1000 + 11_644_473_600_000}0000`,
     mem * 1.4,
     mem * 1.8,
     f,
@@ -152,6 +152,12 @@ let t = 60;
 let fireNow: (() => void) | null = null;
 
 const find = (pid: unknown) => procs.find((p) => p[0] === pid);
+function target(args: Record<string, unknown>): RawProc {
+  const p = find(args.pid);
+  if (!p || p[2] !== args.name || p[13] !== args.creationTime) throw { code: "not-found", message: "That process has already ended." };
+  return p;
+}
+
 const program = (name: string) => PROGRAMS.find((p) => p[0] === name);
 const wait = (ms: number) => new Promise((res) => setTimeout(res, ms));
 const setFlag = (p: RawProc, flag: number, on: boolean) => {
@@ -176,11 +182,12 @@ export const mockBackend: Backend = {
         fireNow?.();
         return r(undefined);
       case "kill_process": {
-        const name = String(args.name);
+        const p = target(args);
+        const name = p[2];
         if (name === "System" || name === "csrss.exe") throw { code: "protected", message: `${name} is part of Windows. Ending it would stop the PC.` };
         if (name === "svchost.exe") throw { code: "needs-admin", message: `Ending ${name} needs administrator rights.` };
         procs = procs.filter((p) => p[0] !== args.pid);
-        return r({ ended: [args.pid], failed: [] });
+        return r({ ended: [{ pid: p[0], creationTime: p[13] }], failed: [] });
       }
       case "proc_static":
         return r(
@@ -215,7 +222,7 @@ export const mockBackend: Backend = {
           company: "Example Ltd",
           parent_pid: 4,
           parent_name: "System",
-          start_ms: p[13],
+          start_ms: fromRaw(p).startMs,
           memory: p[4],
           working_set: p[14],
           peak_working_set: p[14] * 1.2,
@@ -236,21 +243,20 @@ export const mockBackend: Backend = {
         return r(d);
       }
       case "set_priority": {
-        const p = find(args.pid);
         await wait(300);
-        if (!p) throw { code: "not-found", message: "That process has already ended." };
+        const p = target(args);
         if (args.priority === "realtime") throw { code: "needs-admin", message: "Realtime priority needs administrator rights." };
         p[11] = ({ high: 13, "above-normal": 10, normal: 8, "below-normal": 6, low: 4 } as Record<string, number>)[String(args.priority)] ?? 8;
         return r(args.priority);
       }
       case "set_affinity":
         await wait(300);
+        target(args);
         return r(args.mask);
       case "set_efficiency":
       case "set_paused": {
-        const p = find(args.pid);
         await wait(300);
-        if (!p) throw { code: "not-found", message: "That process has already ended." };
+        const p = target(args);
         if (p[16] & F_WINDOWS) throw { code: "needs-admin", message: `Changing ${p[2]} needs administrator rights.` };
         if (cmd === "set_efficiency") setFlag(p, F_ECO, Boolean(args.on));
         else setFlag(p, F_SUSPENDED, Boolean(args.pause));
@@ -258,6 +264,7 @@ export const mockBackend: Backend = {
       }
       case "create_dump":
         await wait(600);
+        target(args);
         return r(`C:\\Users\\me\\AppData\\Local\\Temp\\${String(args.name)}.DMP`);
       case "run_task":
         if (!String(args.command).trim()) throw { code: "invalid", message: "Type the name of a program, folder or website." };

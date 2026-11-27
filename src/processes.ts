@@ -23,6 +23,7 @@ import {
   procKey,
   type ColumnKey,
   type Proc,
+  type ProcessIdentity,
   type RawProc,
   type Row,
   type Section,
@@ -588,7 +589,7 @@ export class ProcessesTab {
     return [
       { label: row.open ? "Collapse" : "Expand", run: () => this.toggle(row) },
       "sep",
-      { label: `End all ${row.count} processes`, danger: true, hint: "Del", run: () => void this.endSelected(false) },
+      { label: `End all ${row.count} processes`, danger: true, hint: "Del", run: () => void this.endSelected(false, row) },
       "sep",
       ...this.shellItems(row),
       "sep",
@@ -602,8 +603,8 @@ export class ProcessesTab {
     const frozen = (p.flags & F_SUSPENDED) !== 0;
     const eco = (p.flags & F_ECO) !== 0;
     const items: (MenuItem | "sep")[] = [
-      { label: "End task", danger: true, hint: "Del", run: () => void this.endSelected(false) },
-      { label: "End process tree", danger: true, run: () => void this.endSelected(true) },
+      { label: "End task", danger: true, hint: "Del", run: () => void this.endSelected(false, row) },
+      { label: "End process tree", danger: true, run: () => void this.endSelected(true, row) },
     ];
     if (p.name.toLowerCase() === "explorer.exe") {
       items.push({ label: "Restart Windows Explorer", run: () => void this.restartExplorer() });
@@ -720,7 +721,7 @@ export class ProcessesTab {
       "efficiency",
       (x) => void (x.flags = on ? x.flags | F_ECO : x.flags & ~F_ECO),
       (x) => void (x.flags = (x.flags & ~F_ECO) | was),
-      () => api.setEfficiency(p.pid, p.name, on),
+      () => api.setEfficiency(p, on),
     );
   }
 
@@ -731,7 +732,7 @@ export class ProcessesTab {
       "paused",
       (x) => void (x.flags = pause ? x.flags | F_SUSPENDED : x.flags & ~F_SUSPENDED),
       (x) => void (x.flags = (x.flags & ~F_SUSPENDED) | was),
-      () => api.setPaused(p.pid, p.name, pause),
+      () => api.setPaused(p, pause),
     );
   }
 
@@ -745,7 +746,7 @@ export class ProcessesTab {
       (x) => void (x.priority = before),
       async () => {
         // Windows may give less than was asked for (Realtime without administrator rights).
-        const actual = await api.setPriority(p.pid, p.name, priority);
+        const actual = await api.setPriority(p, priority);
         if (actual === priority) return;
         const got = PRIORITIES.find((x) => x.key === actual);
         if (got) shown = got.base;
@@ -797,7 +798,7 @@ export class ProcessesTab {
       "Apply",
       async () => {
         try {
-          await api.setAffinity(p.pid, p.name, cpusToMask(boxes.filter((b) => b.box.checked).map((b) => b.cpu)));
+          await api.setAffinity(p, cpusToMask(boxes.filter((b) => b.box.checked).map((b) => b.cpu)));
           return null;
         } catch (e) {
           return asError(e);
@@ -809,7 +810,7 @@ export class ProcessesTab {
   private async createDump(p: Proc): Promise<void> {
     this.notice.info(`Writing a dump file of ${p.name}…`);
     try {
-      const path = await api.createDump(p.pid, p.name);
+      const path = await api.createDump(p);
       this.notice.info(`Dump file written: ${path}`, [
         { label: "Open file location", run: () => void api.openPath(path).catch(this.fail) },
         { label: "Copy path", run: () => copy(path) },
@@ -852,8 +853,7 @@ export class ProcessesTab {
 
   // ── ending processes ──
 
-  private async endSelected(tree: boolean): Promise<void> {
-    const row = this.selectedRow();
+  private async endSelected(tree: boolean, row = this.selectedRow()): Promise<void> {
     if (!row || row.kind === "section") return;
     closeMenu();
     this.notice.clear();
@@ -865,9 +865,9 @@ export class ProcessesTab {
         `End all ${members.length}`,
       );
       if (!ok) return;
-      const results = await Promise.allSettled(members.map((p) => api.kill(p.pid, p.name, false)));
+      const results = await Promise.allSettled(members.map((p) => api.kill(p, false)));
       this.afterKill(
-        members.filter((_, i) => results[i].status === "fulfilled").map((p) => p.pid),
+        members.filter((_, i) => results[i].status === "fulfilled"),
         results.flatMap((r) => (r.status === "rejected" ? [asError(r.reason)] : [])).filter((e) => e.code !== "not-found"),
         members.length,
       );
@@ -883,22 +883,22 @@ export class ProcessesTab {
       if (!ok) return;
     }
     try {
-      const report = await api.kill(p.pid, p.name, tree);
+      const report = await api.kill(p, tree);
       const failures = report.failed.map((f) => ({ code: f.code, message: f.message }) as CmdError);
       this.afterKill(report.ended, failures, report.ended.length + report.failed.length);
     } catch (e) {
       const err = asError(e);
       // It ended by itself first: the row is simply gone on the next refresh.
-      if (err.code === "not-found") this.afterKill([p.pid], [], 1);
+      if (err.code === "not-found") this.afterKill([p], [], 1);
       else this.notice.show(err);
     }
   }
 
   /** Takes ended processes off the screen at once and reports only what could not be ended. */
-  private afterKill(ended: number[], failures: CmdError[], total: number): void {
+  private afterKill(ended: ProcessIdentity[], failures: CmdError[], total: number): void {
     if (ended.length) {
-      const gone = new Set(ended);
-      this.procs = this.procs.filter((p) => !gone.has(p.pid));
+      const gone = new Set(ended.map(procKey));
+      this.procs = this.procs.filter((p) => !gone.has(procKey(p)));
       this.rebuild();
     }
     if (!failures.length) return;
@@ -1004,7 +1004,7 @@ export class ProcessesTab {
     }
     this.wantPid = 0;
     if (this.filter) this.filterBy("");
-    const key = `p:${pid}`;
+    const key = procKey(p);
     if (!this.rows.some((r) => r.key === key)) {
       this.expanded.add(p.name.toLowerCase());
       this.collapsed.clear();

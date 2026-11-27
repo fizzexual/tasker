@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet};
 pub struct ProcNode {
     pub pid: u32,
     pub ppid: u32,
-    /// Seconds since the Unix epoch. Used to detect a reused parent PID.
+    /// Exact Windows creation time in 100 ns units. Used to detect a reused PID.
     pub start_time: u64,
     pub name: String,
 }

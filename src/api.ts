@@ -1,6 +1,6 @@
 // Everything the screen asks the Rust side, in one typed place.
 
-import type { RawProc, StaticInfo } from "./model";
+import type { Proc, ProcessIdentity, RawProc, StaticInfo } from "./model";
 
 export interface DiskSample {
   name: string;
@@ -107,7 +107,7 @@ export interface UserSession {
 }
 export type Priority = "realtime" | "high" | "above-normal" | "normal" | "below-normal" | "low";
 export interface KillReport {
-  ended: number[];
+  ended: ProcessIdentity[];
   failed: { pid: number; name: string; code: string; message: string }[];
 }
 export interface ProcDetails {
@@ -200,6 +200,12 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
   return (await getBackend()).invoke<T>(cmd, args);
 }
 
+type ProcessTarget = Pick<Proc, "pid" | "name" | "creationTime">;
+
+function targetArgs({ pid, name, creationTime }: ProcessTarget) {
+  return { pid, name, creationTime };
+}
+
 export const api = {
   onTick: async (handler: (tick: Tick) => void) => (await getBackend()).onTick(handler),
   uiReady: () => call<void>("ui_ready"),
@@ -207,7 +213,7 @@ export const api = {
   setView: (tab: string) => call<void>("set_view", { tab }),
   history: () => call<PerfSample[]>("get_history"),
   systemInfo: () => call<SystemInfo>("system_info"),
-  kill: (pid: number, name: string, tree: boolean) => call<KillReport>("kill_process", { pid, name, tree }),
+  kill: (target: ProcessTarget, tree: boolean) => call<KillReport>("kill_process", { ...targetArgs(target), tree }),
   details: (pid: number) => call<ProcDetails>("process_details", { pid }),
   icon: (pid: number) => call<string | null>("proc_icon", { pid }),
   openLocation: (pid: number) => call<void>("open_file_location", { pid }),
@@ -215,11 +221,11 @@ export const api = {
   properties: (pid: number) => call<void>("show_properties", { pid }),
   propertiesOf: (path: string) => call<void>("show_properties", { path }),
   staticInfo: (pids: number[]) => call<(StaticInfo & { pid: number })[]>("proc_static", { pids }),
-  setPriority: (pid: number, name: string, priority: Priority) => call<Priority>("set_priority", { pid, name, priority }),
-  setAffinity: (pid: number, name: string, mask: string) => call<string>("set_affinity", { pid, name, mask }),
-  setEfficiency: (pid: number, name: string, on: boolean) => call<void>("set_efficiency", { pid, name, on }),
-  setPaused: (pid: number, name: string, pause: boolean) => call<void>("set_paused", { pid, name, pause }),
-  createDump: (pid: number, name: string) => call<string>("create_dump", { pid, name }),
+  setPriority: (target: ProcessTarget, priority: Priority) => call<Priority>("set_priority", { ...targetArgs(target), priority }),
+  setAffinity: (target: ProcessTarget, mask: string) => call<string>("set_affinity", { ...targetArgs(target), mask }),
+  setEfficiency: (target: ProcessTarget, on: boolean) => call<void>("set_efficiency", { ...targetArgs(target), on }),
+  setPaused: (target: ProcessTarget, pause: boolean) => call<void>("set_paused", { ...targetArgs(target), pause }),
+  createDump: (target: ProcessTarget) => call<string>("create_dump", targetArgs(target)),
   searchOnline: (query: string) => call<void>("search_online", { query }),
   runTask: (command: string, admin: boolean) => call<void>("run_task", { command, admin }),
   switchTo: (pid: number) => call<void>("switch_to", { pid }),

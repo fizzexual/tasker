@@ -9,7 +9,7 @@ use serde::Serialize;
 use windows::core::BOOL;
 use windows::Win32::Foundation::GetLastError;
 use windows::Win32::System::Threading::{
-    IsProcessCritical, OpenProcess, TerminateProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE,
+    IsProcessCritical, TerminateProcess, PROCESS_TERMINATE,
 };
 
 /// A fresh list of every process, straight from Windows.
@@ -37,45 +37,63 @@ pub struct KillFailure {
     pub message: String,
 }
 
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProcessIdentity {
+    pub pid: u32,
+    pub creation_time: String,
+}
+
+impl From<&ProcNode> for ProcessIdentity {
+    fn from(node: &ProcNode) -> Self {
+        Self { pid: node.pid, creation_time: node.start_time.to_string() }
+    }
+}
+
 #[derive(Debug, Serialize, Clone, PartialEq, Eq, Default)]
 pub struct KillReport {
-    pub ended: Vec<u32>,
+    pub ended: Vec<ProcessIdentity>,
     pub failed: Vec<KillFailure>,
 }
 
-/// Ends exactly one process. Refuses the ones Windows needs to stay alive.
-fn terminate(pid: u32, name: &str) -> CmdResult<()> {
-    let what = format!("Ending {name}");
-    if tree::is_protected(pid, name) {
-        return Err(CmdError::new("protected", format!("{name} is part of Windows. Ending it would stop the PC.")));
+fn check_protected_name(node: &ProcNode) -> CmdResult<()> {
+    if tree::is_protected(node.pid, &node.name) {
+        return Err(CmdError::new("protected", format!("{} is part of Windows. Ending it would stop the PC.", node.name)));
     }
-    unsafe {
-        let handle = OpenProcess(PROCESS_TERMINATE | PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
-            .map(Handle)
-            .map_err(|_| CmdError::from_win32(GetLastError().0, &what))?;
-        let mut critical = BOOL(0);
-        if IsProcessCritical(handle.0, &mut critical).is_ok() && critical.as_bool() {
-            return Err(CmdError::new(
-                "protected",
-                format!("{name} is marked critical by Windows. Ending it would stop the PC."),
-            ));
-        }
-        TerminateProcess(handle.0, 1).map_err(|_| CmdError::from_win32(GetLastError().0, &what))
+    Ok(())
+}
+
+fn check_critical(handle: &Handle, name: &str) -> CmdResult<()> {
+    let mut critical = BOOL(0);
+    unsafe { IsProcessCritical(handle.0, &mut critical) }
+        .map_err(|_| CmdError::failed(format!("Windows could not verify whether {name} is critical.")))?;
+    if critical.as_bool() {
+        return Err(CmdError::new("protected", format!("{name} is marked critical by Windows. Ending it would stop the PC.")));
     }
+    Ok(())
+}
+
+fn open_kill_target(node: &ProcNode) -> CmdResult<Handle> {
+    check_protected_name(node)?;
+    let handle = procinfo::open_instance(node.pid, node.start_time, PROCESS_TERMINATE, &format!("Ending {}", node.name))?;
+    check_critical(&handle, &node.name)?;
+    Ok(handle)
 }
 
 /// Decides which processes an "end" request really covers. Pure, so it is tested without
 /// ending anything.
 ///
-/// - `expected_name` guards against a reused PID: if the process under that PID is no longer
-///   the one the user clicked, nothing is ended.
+/// - Both the name and the exact creation time must match the selection.
 /// - Our own process and everything under it (the window's WebView) is never part of a tree,
 ///   so ending the tree we were started from does not take the task manager down with it.
-pub fn plan_kill(procs: &[ProcNode], pid: u32, expected_name: &str, whole_tree: bool, own_pid: u32) -> CmdResult<Vec<ProcNode>> {
+pub fn plan_kill(
+    procs: &[ProcNode], pid: u32, expected_name: &str, creation_time: u64, whole_tree: bool, own_pid: u32,
+) -> CmdResult<Vec<ProcNode>> {
     let target = procs.iter().find(|p| p.pid == pid).ok_or_else(|| CmdError::not_found("That process"))?;
-    if !target.name.eq_ignore_ascii_case(expected_name) {
+    if target.start_time != creation_time || !target.name.eq_ignore_ascii_case(expected_name) {
         return Err(CmdError::not_found("That process"));
     }
+    check_protected_name(target)?;
     if !whole_tree {
         return Ok(vec![target.clone()]);
     }
@@ -90,16 +108,31 @@ pub fn plan_kill(procs: &[ProcNode], pid: u32, expected_name: &str, whole_tree: 
         .collect())
 }
 
-pub fn kill(pid: u32, expected_name: &str, whole_tree: bool) -> CmdResult<KillReport> {
+pub fn kill(pid: u32, expected_name: &str, creation_time: u64, whole_tree: bool) -> CmdResult<KillReport> {
     let procs = snapshot()?;
-    let plan = plan_kill(&procs, pid, expected_name, whole_tree, std::process::id())?;
+    let plan = plan_kill(&procs, pid, expected_name, creation_time, whole_tree, std::process::id())?;
+    end_plan(&plan, pid, whole_tree)
+}
 
+fn end_plan(plan: &[ProcNode], root_pid: u32, whole_tree: bool) -> CmdResult<KillReport> {
     let mut report = KillReport::default();
-    for node in &plan {
-        match terminate(node.pid, &node.name) {
-            Ok(()) => report.ended.push(node.pid),
-            // It ended by itself between the list and the request: that is the outcome wanted.
-            Err(e) if e.code == "not-found" && node.pid != pid => report.ended.push(node.pid),
+    let mut targets = Vec::with_capacity(plan.len());
+    // Preflight parents first. A protected or inaccessible branch must not lose descendants.
+    // Keeping each verified handle also prevents a later PID lookup from targeting a replacement.
+    for node in plan.iter().rev() {
+        match open_kill_target(node) {
+            Ok(handle) => targets.push((node, handle)),
+            Err(e) if node.pid != root_pid && e.code == "not-found" => report.ended.push(node.into()),
+            Err(e) => return Err(e),
+        }
+    }
+    for (node, handle) in targets.into_iter().rev() {
+        let result = check_critical(&handle, &node.name).and_then(|()| {
+            unsafe { TerminateProcess(handle.0, 1) }
+                .map_err(|_| CmdError::from_win32(unsafe { GetLastError().0 }, &format!("Ending {}", node.name)))
+        });
+        match result {
+            Ok(()) => report.ended.push(node.into()),
             Err(e) => report.failed.push(KillFailure {
                 pid: node.pid,
                 name: node.name.clone(),
@@ -225,6 +258,7 @@ pub fn exe_path(pid: u32) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::procinfo::test_creation_time;
     use std::process::{Command, Stdio};
 
     fn n(pid: u32, ppid: u32, start: u64, name: &str) -> ProcNode {
@@ -234,14 +268,14 @@ mod tests {
     #[test]
     fn single_kill_plans_only_the_target() {
         let procs = vec![n(10, 1, 5, "a.exe"), n(11, 10, 6, "b.exe")];
-        let plan = plan_kill(&procs, 10, "a.exe", false, 999).unwrap();
+        let plan = plan_kill(&procs, 10, "a.exe", 5, false, 999).unwrap();
         assert_eq!(plan.iter().map(|p| p.pid).collect::<Vec<_>>(), vec![10]);
     }
 
     #[test]
     fn tree_kill_plans_children_first() {
         let procs = vec![n(10, 1, 5, "a.exe"), n(11, 10, 6, "b.exe"), n(12, 11, 7, "c.exe")];
-        let plan = plan_kill(&procs, 10, "A.EXE", true, 999).unwrap();
+        let plan = plan_kill(&procs, 10, "A.EXE", 5, true, 999).unwrap();
         assert_eq!(plan.iter().map(|p| p.pid).collect::<Vec<_>>(), vec![12, 11, 10]);
     }
 
@@ -249,12 +283,12 @@ mod tests {
     fn reused_pid_is_refused() {
         // The user clicked "chrome.exe" with PID 10; by the time the request arrives PID 10 is notepad.
         let procs = vec![n(10, 1, 5, "notepad.exe")];
-        assert_eq!(plan_kill(&procs, 10, "chrome.exe", false, 999).unwrap_err().code, "not-found");
+        assert_eq!(plan_kill(&procs, 10, "chrome.exe", 5, false, 999).unwrap_err().code, "not-found");
     }
 
     #[test]
     fn already_gone_is_not_found() {
-        assert_eq!(plan_kill(&[], 10, "a.exe", true, 999).unwrap_err().code, "not-found");
+        assert_eq!(plan_kill(&[], 10, "a.exe", 5, true, 999).unwrap_err().code, "not-found");
     }
 
     #[test]
@@ -267,7 +301,7 @@ mod tests {
             n(51, 50, 7, "msedgewebview2.exe"),
             n(60, 10, 8, "other.exe"),
         ];
-        let mut pids: Vec<u32> = plan_kill(&procs, 10, "explorer.exe", true, 50).unwrap().iter().map(|p| p.pid).collect();
+        let mut pids: Vec<u32> = plan_kill(&procs, 10, "explorer.exe", 5, true, 50).unwrap().iter().map(|p| p.pid).collect();
         pids.sort();
         assert_eq!(pids, vec![10, 60]);
     }
@@ -277,29 +311,26 @@ mod tests {
         // We (50) started a helper (70) that started its own child (71). Ending 70's tree
         // is an explicit choice and must take 71 too.
         let procs = vec![n(50, 10, 6, "Tasker.exe"), n(70, 50, 7, "helper.exe"), n(71, 70, 8, "kid.exe")];
-        let pids: Vec<u32> = plan_kill(&procs, 70, "helper.exe", true, 50).unwrap().iter().map(|p| p.pid).collect();
+        let pids: Vec<u32> = plan_kill(&procs, 70, "helper.exe", 7, true, 50).unwrap().iter().map(|p| p.pid).collect();
         assert_eq!(pids, vec![71, 70]);
     }
 
     #[test]
     fn ending_our_own_tree_ends_us_last() {
         let procs = vec![n(50, 10, 6, "Tasker.exe"), n(51, 50, 7, "msedgewebview2.exe")];
-        let pids: Vec<u32> = plan_kill(&procs, 50, "Tasker.exe", true, 50).unwrap().iter().map(|p| p.pid).collect();
+        let pids: Vec<u32> = plan_kill(&procs, 50, "Tasker.exe", 6, true, 50).unwrap().iter().map(|p| p.pid).collect();
         assert_eq!(pids, vec![51, 50]);
     }
 
     #[test]
     fn protected_process_is_refused_before_touching_it() {
-        let err = terminate(4, "System").unwrap_err();
-        assert_eq!(err.code, "protected");
-        let err = terminate(700, "csrss.exe").unwrap_err();
-        assert_eq!(err.code, "protected");
+        let nodes = [n(4, 0, 0, "System"), n(101, 4, 5, "worker.exe")];
+        assert_eq!(plan_kill(&nodes, 4, "System", 0, true, 999).unwrap_err().code, "protected");
     }
 
     #[test]
     fn ending_a_pid_that_does_not_exist_is_not_found() {
-        // PIDs are multiples of 4 on Windows, so this one can never exist.
-        let err = terminate(4_000_000_001, "ghost.exe").unwrap_err();
+        let err = open_kill_target(&n(4_000_000_001, 0, 1, "ghost.exe")).err().unwrap();
         assert_eq!(err.code, "not-found");
     }
 
@@ -316,8 +347,9 @@ mod tests {
     #[test]
     fn really_ends_a_process_we_started() {
         let mut child = spawn_sleeper();
-        let report = kill(child.id(), "cmd.exe", false).unwrap();
-        assert_eq!(report.ended, vec![child.id()]);
+        let report = kill(child.id(), "cmd.exe", test_creation_time(child.id()), false).unwrap();
+        assert_eq!(report.ended.len(), 1);
+        assert_eq!(report.ended[0].pid, child.id());
         let status = child.wait().unwrap();
         assert_eq!(status.code(), Some(1), "ended by us, not by finishing");
     }
@@ -331,9 +363,9 @@ mod tests {
         let kids: Vec<u32> = before.iter().filter(|p| p.ppid == child.id()).map(|p| p.pid).collect();
         assert!(!kids.is_empty(), "the child process is running");
 
-        let report = kill(child.id(), "cmd.exe", true).unwrap();
+        let report = kill(child.id(), "cmd.exe", test_creation_time(child.id()), true).unwrap();
         assert!(report.failed.is_empty(), "{:?}", report.failed);
-        assert!(report.ended.contains(&child.id()));
+        assert!(report.ended.iter().any(|p| p.pid == child.id()));
         child.wait().unwrap();
         std::thread::sleep(std::time::Duration::from_millis(300));
         let after = snapshot().unwrap();
@@ -345,10 +377,66 @@ mod tests {
     #[test]
     fn wrong_name_ends_nothing() {
         let mut child = spawn_sleeper();
-        let err = kill(child.id(), "definitely-not-cmd.exe", false).unwrap_err();
+        let err = kill(child.id(), "definitely-not-cmd.exe", test_creation_time(child.id()), false).unwrap_err();
         assert_eq!(err.code, "not-found");
         assert!(child.try_wait().unwrap().is_none(), "the process is still running");
         child.kill().unwrap();
+        child.wait().unwrap();
+    }
+
+    #[test]
+    fn a_same_named_replacement_survives_a_stale_request() {
+        let mut child = spawn_sleeper();
+        let born = test_creation_time(child.id());
+        let err = kill(child.id(), "cmd.exe", born + 1, true).unwrap_err();
+        assert_eq!(err.code, "not-found");
+        assert!(child.try_wait().unwrap().is_none());
+        let report = kill(child.id(), "cmd.exe", born, true).unwrap();
+        assert!(report.ended.iter().any(|p| p.pid == child.id() && p.creation_time == born.to_string()));
+        child.wait().unwrap();
+    }
+
+    #[test]
+    fn protection_refusal_leaves_an_earlier_candidate_alive() {
+        let mut child = spawn_sleeper();
+        let born = test_creation_time(child.id());
+        // Synthetic topology; the only real target in this plan is our disposable child.
+        let plan = [n(child.id(), 10, born, "cmd.exe"), n(10, 0, 1, "csrss.exe")];
+        assert_eq!(end_plan(&plan, 10, true).unwrap_err().code, "protected");
+        assert!(child.try_wait().unwrap().is_none());
+        kill(child.id(), "cmd.exe", born, true).unwrap();
+        child.wait().unwrap();
+    }
+
+    #[test]
+    fn a_protected_branch_leaves_a_verified_root_and_sibling_running() {
+        let mut root = spawn_sleeper();
+        let mut sibling = spawn_sleeper();
+        let root_born = test_creation_time(root.id());
+        let sibling_born = test_creation_time(sibling.id());
+        // All process handles this test can open belong to helpers that it started.
+        let plan = [
+            n(10, root.id(), 1, "csrss.exe"),
+            n(sibling.id(), root.id(), sibling_born, "cmd.exe"),
+            n(root.id(), 0, root_born, "cmd.exe"),
+        ];
+        assert_eq!(end_plan(&plan, root.id(), true).unwrap_err().code, "protected");
+        assert!(root.try_wait().unwrap().is_none());
+        assert!(sibling.try_wait().unwrap().is_none());
+        kill(root.id(), "cmd.exe", root_born, true).unwrap();
+        kill(sibling.id(), "cmd.exe", sibling_born, true).unwrap();
+        root.wait().unwrap();
+        sibling.wait().unwrap();
+    }
+
+    #[test]
+    fn handle_verification_rejects_a_replacement_after_the_snapshot() {
+        let mut child = spawn_sleeper();
+        let born = test_creation_time(child.id());
+        let plan = [n(child.id(), 0, born + 1, "cmd.exe")];
+        assert_eq!(end_plan(&plan, child.id(), false).unwrap_err().code, "not-found");
+        assert!(child.try_wait().unwrap().is_none());
+        kill(child.id(), "cmd.exe", born, true).unwrap();
         child.wait().unwrap();
     }
 

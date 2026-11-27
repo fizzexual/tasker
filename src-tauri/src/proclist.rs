@@ -45,8 +45,8 @@ pub struct ProcRow {
     pub session: u32,
     pub priority: i32,
     pub cpu_time_ms: u64,
-    /// Unix milliseconds; with the PID it names one process for good.
-    pub start_ms: u64,
+    /// Exact Windows creation time, in 100 ns units since 1601.
+    pub creation_time: u64,
     pub ws: u64,
     pub commit: u64,
     pub flags: u32,
@@ -56,7 +56,7 @@ pub struct ProcRow {
 
 /// Sent as a compact array to keep each refresh small:
 /// `[pid, ppid, name, cpu, mem, diskRead, diskWrite, gpu, threads, handles, session, priority,
-///   cpuTimeMs, startMs, workingSet, commit, flags, title]`.
+///   cpuTimeMs, creationTime, workingSet, commit, flags, title]`.
 impl Serialize for ProcRow {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut seq = serializer.serialize_seq(Some(18))?;
@@ -73,7 +73,8 @@ impl Serialize for ProcRow {
         seq.serialize_element(&self.session)?;
         seq.serialize_element(&self.priority)?;
         seq.serialize_element(&self.cpu_time_ms)?;
-        seq.serialize_element(&self.start_ms)?;
+        // A FILETIME is larger than a JavaScript safe integer.
+        seq.serialize_element(&self.creation_time.to_string())?;
         seq.serialize_element(&self.ws)?;
         seq.serialize_element(&self.commit)?;
         seq.serialize_element(&self.flags)?;
@@ -276,7 +277,7 @@ impl Engine {
                 session: p.session,
                 priority: p.base_priority,
                 cpu_time_ms: p.cpu_time_ms(),
-                start_ms: p.start_unix_ms(),
+                creation_time: p.create_time,
                 ws: p.ws,
                 commit: p.commit,
                 flags,
@@ -309,9 +310,9 @@ mod tests {
 
     #[test]
     fn a_row_is_sent_as_a_compact_array() {
-        let row = ProcRow { pid: 12, ppid: 4, name: "a.exe".into(), cpu: 1.23456, mem: 1000, title: "Hi".into(), ..Default::default() };
+        let row = ProcRow { pid: 12, ppid: 4, name: "a.exe".into(), cpu: 1.23456, mem: 1000, creation_time: 134000000000000001, title: "Hi".into(), ..Default::default() };
         let json = serde_json::to_string(&row).unwrap();
-        assert_eq!(json, r#"[12,4,"a.exe",1.23,1000,0.0,0.0,0.0,0,0,0,0,0,0,0,0,0,"Hi"]"#);
+        assert_eq!(json, r#"[12,4,"a.exe",1.23,1000,0.0,0.0,0.0,0,0,0,0,0,"134000000000000001",0,0,0,"Hi"]"#);
     }
 
     #[test]
@@ -331,7 +332,8 @@ mod tests {
         assert!(me.mem > 1 << 20 && me.ws >= me.mem, "private memory is part of the working set");
         assert!(me.cpu > 0.5, "we just used a core for 0.3 s: {}", me.cpu);
         assert!(me.threads >= 1 && me.handles > 10);
-        assert!(me.start_ms > 1_600_000_000_000 && me.cpu_time_ms > 0);
+        assert_eq!(me.creation_time, procinfo::test_creation_time(me.pid));
+        assert!(me.creation_time > 0 && me.cpu_time_ms > 0);
         assert_eq!(me.flags & F_WINDOWS, 0);
         assert!(rows.iter().all(|r| (0.0..=100.0).contains(&r.cpu)), "CPU is a share of the whole PC");
         assert!(rows.iter().all(|r| r.pid != 0), "the idle process is left out");

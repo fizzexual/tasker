@@ -12,7 +12,7 @@ use windows::Win32::System::Diagnostics::Debug::{MiniDumpWithFullMemory, MiniDum
 use windows::Win32::System::Threading::{
     ProcessPowerThrottling, SetPriorityClass, SetProcessAffinityMask, SetProcessInformation, TerminateProcess,
     PROCESS_ACCESS_RIGHTS, PROCESS_CREATION_FLAGS, PROCESS_POWER_THROTTLING_STATE, PROCESS_QUERY_INFORMATION,
-    PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SET_INFORMATION, PROCESS_SUSPEND_RESUME, PROCESS_TERMINATE,
+    PROCESS_SET_INFORMATION, PROCESS_SUSPEND_RESUME, PROCESS_TERMINATE,
     PROCESS_VM_READ,
 };
 use windows::Win32::UI::Shell::{
@@ -32,23 +32,23 @@ const NORMAL_PRIORITY: u32 = 0x20;
 
 /// Opens the process the user picked, making sure it still is that process: a PID can be
 /// handed to a new program between the click and the request.
-fn open_checked(pid: u32, expected_name: &str, access: PROCESS_ACCESS_RIGHTS, what: &str) -> CmdResult<Handle> {
+fn open_checked(pid: u32, expected_name: &str, creation_time: u64, access: PROCESS_ACCESS_RIGHTS, what: &str) -> CmdResult<Handle> {
     let list = procs::list();
     let found = list.iter().find(|p| p.pid == pid).ok_or_else(|| CmdError::not_found("That process"))?;
-    if !found.name.eq_ignore_ascii_case(expected_name) {
+    if found.create_time != creation_time || !found.name.eq_ignore_ascii_case(expected_name) {
         return Err(CmdError::not_found("That process"));
     }
-    procinfo::open(pid, access).map_err(|code| CmdError::from_win32(code, what))
+    procinfo::open_instance(pid, creation_time, access, what)
 }
 
 fn last_error(what: &str) -> CmdError {
     CmdError::from_win32(unsafe { GetLastError().0 }, what)
 }
 
-pub fn set_priority(pid: u32, name: &str, priority: &str) -> CmdResult<&'static str> {
+pub fn set_priority(pid: u32, name: &str, creation_time: u64, priority: &str) -> CmdResult<&'static str> {
     let class = procinfo::priority_class(priority).ok_or_else(|| CmdError::invalid("Unknown priority."))?;
     let what = format!("Changing the priority of {name}");
-    let handle = open_checked(pid, name, PROCESS_SET_INFORMATION | PROCESS_QUERY_LIMITED_INFORMATION, &what)?;
+    let handle = open_checked(pid, name, creation_time, PROCESS_SET_INFORMATION, &what)?;
     unsafe { SetPriorityClass(handle.0, PROCESS_CREATION_FLAGS(class)).map_err(|_| last_error(&what))? };
     // Windows quietly gives "high" when "realtime" is asked for without administrator rights:
     // report what was really set.
@@ -56,25 +56,25 @@ pub fn set_priority(pid: u32, name: &str, priority: &str) -> CmdResult<&'static 
 }
 
 /// `mask` has one bit per processor the process may use. Returns the mask now in force.
-pub fn set_affinity(pid: u32, name: &str, mask: u64) -> CmdResult<u64> {
+pub fn set_affinity(pid: u32, name: &str, creation_time: u64, mask: u64) -> CmdResult<u64> {
     let what = format!("Changing the processors of {name}");
     let (_, system) = procinfo::affinity_of(pid).ok_or_else(|| CmdError::from_win32(5, &what))?;
     let wanted = mask & system;
     if wanted == 0 {
         return Err(CmdError::invalid("Pick at least one processor."));
     }
-    let handle = open_checked(pid, name, PROCESS_SET_INFORMATION | PROCESS_QUERY_LIMITED_INFORMATION, &what)?;
+    let handle = open_checked(pid, name, creation_time, PROCESS_SET_INFORMATION, &what)?;
     unsafe { SetProcessAffinityMask(handle.0, wanted as usize).map_err(|_| last_error(&what))? };
     Ok(procinfo::affinity_of(pid).map(|(mine, _)| mine).unwrap_or(wanted))
 }
 
 /// Efficiency mode, as in Windows Task Manager: low priority plus the power-saving speed.
-pub fn set_efficiency(pid: u32, name: &str, on: bool) -> CmdResult<()> {
+pub fn set_efficiency(pid: u32, name: &str, creation_time: u64, on: bool) -> CmdResult<()> {
     let what = format!("Changing efficiency mode of {name}");
     if tree::is_protected(pid, name) {
         return Err(CmdError::new("protected", format!("{name} is part of Windows and cannot be slowed down.")));
     }
-    let handle = open_checked(pid, name, PROCESS_SET_INFORMATION | PROCESS_QUERY_LIMITED_INFORMATION, &what)?;
+    let handle = open_checked(pid, name, creation_time, PROCESS_SET_INFORMATION, &what)?;
     let state = PROCESS_POWER_THROTTLING_STATE {
         Version: 1,
         ControlMask: EXECUTION_SPEED,
@@ -95,7 +95,7 @@ pub fn set_efficiency(pid: u32, name: &str, on: bool) -> CmdResult<()> {
 }
 
 /// Freezes (`pause = true`) or continues every thread of a process.
-pub fn set_paused(pid: u32, name: &str, pause: bool, own_pid: u32) -> CmdResult<()> {
+pub fn set_paused(pid: u32, name: &str, creation_time: u64, pause: bool, own_pid: u32) -> CmdResult<()> {
     let what = format!("{} {name}", if pause { "Pausing" } else { "Continuing" });
     if pause {
         if tree::is_protected(pid, name) {
@@ -105,7 +105,7 @@ pub fn set_paused(pid: u32, name: &str, pause: bool, own_pid: u32) -> CmdResult<
             return Err(CmdError::new("protected", "The task manager cannot pause itself: nothing could continue it."));
         }
     }
-    let handle = open_checked(pid, name, PROCESS_SUSPEND_RESUME, &what)?;
+    let handle = open_checked(pid, name, creation_time, PROCESS_SUSPEND_RESUME, &what)?;
     let status = unsafe {
         if pause {
             NtSuspendProcess(handle.0)
@@ -136,9 +136,9 @@ pub fn dump_path(folder: &Path, name: &str, pid: u32, taken: impl Fn(&Path) -> b
 }
 
 /// Writes a full memory dump next to the user's temporary files and returns its path.
-pub fn create_dump(pid: u32, name: &str) -> CmdResult<String> {
+pub fn create_dump(pid: u32, name: &str, creation_time: u64) -> CmdResult<String> {
     let what = format!("Creating a dump file of {name}");
-    let handle = open_checked(pid, name, PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, &what)?;
+    let handle = open_checked(pid, name, creation_time, PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, &what)?;
     let path = dump_path(&std::env::temp_dir(), name, pid, |p| p.exists());
     let file = std::fs::File::create(&path).map_err(|e| CmdError::failed(format!("Could not create {}: {e}", path.display())))?;
     let written = unsafe {
@@ -286,6 +286,7 @@ pub fn restart_explorer() -> CmdResult<()> {
 mod tests {
     use super::*;
     use crate::proclist::efficiency_of;
+    use crate::procinfo::test_creation_time;
     use std::process::{Child, Command, Stdio};
 
     fn sleeper() -> Child {
@@ -299,16 +300,17 @@ mod tests {
     }
 
     fn end(mut child: Child) {
-        let _ = procs::kill(child.id(), "cmd.exe", true);
+        let _ = procs::kill(child.id(), "cmd.exe", test_creation_time(child.id()), true);
         let _ = child.wait();
     }
 
     #[test]
     fn priority_is_really_changed_and_read_back() {
         let child = sleeper();
-        assert_eq!(set_priority(child.id(), "cmd.exe", "below-normal").unwrap(), "below-normal");
+        let born = test_creation_time(child.id());
+        assert_eq!(set_priority(child.id(), "cmd.exe", born, "below-normal").unwrap(), "below-normal");
         assert_eq!(procinfo::priority_of(child.id()), "below-normal");
-        assert_eq!(set_priority(child.id(), "cmd.exe", "turbo").unwrap_err().code, "invalid");
+        assert_eq!(set_priority(child.id(), "cmd.exe", born, "turbo").unwrap_err().code, "invalid");
         assert_eq!(procinfo::priority_of(child.id()), "below-normal", "a refused change changes nothing");
         end(child);
     }
@@ -316,34 +318,46 @@ mod tests {
     #[test]
     fn the_wrong_name_changes_nothing() {
         let child = sleeper();
-        assert_eq!(set_priority(child.id(), "notepad.exe", "low").unwrap_err().code, "not-found");
+        let born = test_creation_time(child.id());
+        assert_eq!(set_priority(child.id(), "notepad.exe", born, "low").unwrap_err().code, "not-found");
         assert_eq!(procinfo::priority_of(child.id()), "normal");
-        assert_eq!(set_paused(child.id(), "notepad.exe", true, 1).unwrap_err().code, "not-found");
-        assert_eq!(set_efficiency(child.id(), "notepad.exe", true).unwrap_err().code, "not-found");
-        assert_eq!(create_dump(child.id(), "notepad.exe").unwrap_err().code, "not-found");
+        assert_eq!(set_paused(child.id(), "notepad.exe", born, true, 1).unwrap_err().code, "not-found");
+        assert_eq!(set_efficiency(child.id(), "notepad.exe", born, true).unwrap_err().code, "not-found");
+        assert_eq!(create_dump(child.id(), "notepad.exe", born).unwrap_err().code, "not-found");
+        end(child);
+    }
+
+    #[test]
+    fn a_stale_creation_time_cannot_change_a_same_named_process() {
+        let child = sleeper();
+        let stale = test_creation_time(child.id()) + 1;
+        assert_eq!(set_priority(child.id(), "cmd.exe", stale, "low").unwrap_err().code, "not-found");
+        assert_eq!(procinfo::priority_of(child.id()), "normal");
         end(child);
     }
 
     #[test]
     fn affinity_is_limited_to_real_processors() {
         let child = sleeper();
+        let born = test_creation_time(child.id());
         let (_, system) = procinfo::affinity_of(child.id()).unwrap();
-        assert_eq!(set_affinity(child.id(), "cmd.exe", 1).unwrap(), 1);
+        assert_eq!(set_affinity(child.id(), "cmd.exe", born, 1).unwrap(), 1);
         assert_eq!(procinfo::affinity_of(child.id()).unwrap().0, 1);
-        assert_eq!(set_affinity(child.id(), "cmd.exe", 0).unwrap_err().code, "invalid");
+        assert_eq!(set_affinity(child.id(), "cmd.exe", born, 0).unwrap_err().code, "invalid");
         assert_eq!(procinfo::affinity_of(child.id()).unwrap().0, 1, "a refused change changes nothing");
-        assert_eq!(set_affinity(child.id(), "cmd.exe", u64::MAX).unwrap(), system, "extra bits are dropped");
+        assert_eq!(set_affinity(child.id(), "cmd.exe", born, u64::MAX).unwrap(), system, "extra bits are dropped");
         end(child);
     }
 
     #[test]
     fn efficiency_mode_goes_on_and_off() {
         let child = sleeper();
+        let born = test_creation_time(child.id());
         assert_eq!(efficiency_of(child.id()), Some(false));
-        set_efficiency(child.id(), "cmd.exe", true).unwrap();
+        set_efficiency(child.id(), "cmd.exe", born, true).unwrap();
         assert_eq!(efficiency_of(child.id()), Some(true));
         assert_eq!(procinfo::priority_of(child.id()), "low");
-        set_efficiency(child.id(), "cmd.exe", false).unwrap();
+        set_efficiency(child.id(), "cmd.exe", born, false).unwrap();
         assert_eq!(efficiency_of(child.id()), Some(false));
         assert_eq!(procinfo::priority_of(child.id()), "normal");
         end(child);
@@ -352,29 +366,30 @@ mod tests {
     #[test]
     fn pause_freezes_and_continue_unfreezes() {
         let child = sleeper();
+        let born = test_creation_time(child.id());
         std::thread::sleep(std::time::Duration::from_millis(300));
         let frozen = |pid: u32| procs::list().iter().find(|p| p.pid == pid).map(|p| p.suspended);
         assert_eq!(frozen(child.id()), Some(false));
-        set_paused(child.id(), "cmd.exe", true, std::process::id()).unwrap();
+        set_paused(child.id(), "cmd.exe", born, true, std::process::id()).unwrap();
         assert_eq!(frozen(child.id()), Some(true));
-        set_paused(child.id(), "cmd.exe", false, std::process::id()).unwrap();
+        set_paused(child.id(), "cmd.exe", born, false, std::process::id()).unwrap();
         assert_eq!(frozen(child.id()), Some(false));
         end(child);
     }
 
     #[test]
     fn pausing_windows_or_ourselves_is_refused() {
-        assert_eq!(set_paused(4, "System", true, 1).unwrap_err().code, "protected");
+        assert_eq!(set_paused(4, "System", 0, true, 1).unwrap_err().code, "protected");
         let me = std::process::id();
         let my_name = procs::list().into_iter().find(|p| p.pid == me).unwrap().name;
-        assert_eq!(set_paused(me, &my_name, true, me).unwrap_err().code, "protected");
-        assert_eq!(set_efficiency(4, "System", true).unwrap_err().code, "protected");
+        assert_eq!(set_paused(me, &my_name, test_creation_time(me), true, me).unwrap_err().code, "protected");
+        assert_eq!(set_efficiency(4, "System", 0, true).unwrap_err().code, "protected");
     }
 
     #[test]
     fn a_dump_file_is_written_and_named_after_the_program() {
         let child = sleeper();
-        let path = create_dump(child.id(), "cmd.exe").unwrap();
+        let path = create_dump(child.id(), "cmd.exe", test_creation_time(child.id())).unwrap();
         let bytes = std::fs::read(&path).unwrap();
         let _ = std::fs::remove_file(&path);
         assert!(path.ends_with(&format!("cmd ({}).DMP", child.id())), "{path}");

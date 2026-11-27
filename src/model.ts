@@ -30,8 +30,10 @@ export interface Proc {
   /** Windows base priority number (8 = normal). */
   priority: number;
   cpuTimeMs: number;
-  /** Unix milliseconds; with the PID it names one process for good. */
+  /** Unix milliseconds for display. */
   startMs: number;
+  /** Exact Windows creation time as decimal FILETIME ticks. */
+  creationTime: string;
   /** Working set, bytes. */
   ws: number;
   /** Commit size, bytes. */
@@ -56,7 +58,7 @@ export type RawProc = [
   session: number,
   priority: number,
   cpuTimeMs: number,
-  startMs: number,
+  creationTime: string,
   ws: number,
   commit: number,
   flags: number,
@@ -78,7 +80,9 @@ export function fromRaw(r: RawProc): Proc {
     session: r[10],
     priority: r[11],
     cpuTimeMs: r[12],
-    startMs: r[13],
+    // Drop the four sub-millisecond digits before converting to a JavaScript number.
+    startMs: Math.max(0, Number(r[13].slice(0, -4)) - 11_644_473_600_000),
+    creationTime: r[13],
     ws: r[14],
     commit: r[15],
     flags: r[16],
@@ -97,9 +101,11 @@ export interface StaticInfo {
   command: string;
 }
 
+export type ProcessIdentity = Pick<Proc, "pid" | "creationTime">;
+
 /** Identity that survives PID reuse. */
-export function procKey(p: Pick<Proc, "pid" | "startMs">): string {
-  return `${p.pid}:${p.startMs}`;
+export function procKey(p: ProcessIdentity): string {
+  return `p:${p.pid}:${p.creationTime}`;
 }
 
 export type InfoOf = (p: Proc) => StaticInfo | undefined;
@@ -152,7 +158,7 @@ export interface ViewOptions {
 }
 
 export interface Row {
-  /** Stable identity: `p:<pid>` for a process, `g:<name>` for a group, `s:<section>` for a heading. */
+  /** Stable identity: `p:<pid>:<creationTime>` for a process, `g:<name>` for a group, `s:<section>` for a heading. */
   key: string;
   kind: "proc" | "group" | "section";
   /** A process shown inside an open group. */
@@ -293,7 +299,7 @@ function compare(a: Row, b: Row, key: ColumnKey, desc: boolean, info: InfoOf): n
 
 function procRow(p: Proc, child: boolean, name: string): Row {
   return {
-    key: `p:${p.pid}`,
+    key: procKey(p),
     kind: "proc",
     child,
     name,
@@ -446,7 +452,7 @@ export function buildRows(procs: readonly Proc[], opts: ViewOptions): Row[] {
  * "end all" and for adding up what one person runs.
  */
 export function membersOf(procs: readonly Proc[], row: Row): Proc[] {
-  if (row.kind === "proc") return row.rep ? procs.filter((p) => p.pid === row.pid) : [];
+  if (row.kind === "proc") return row.rep ? procs.filter((p) => procKey(p) === row.key) : [];
   if (row.kind === "group") {
     const k = row.key.slice(2);
     return procs.filter((p) => p.name.toLowerCase() === k);
@@ -527,7 +533,7 @@ export class Picks {
   }
 
   /** Shows a pick now. A newer pick for the same thing on the same process replaces an older one. */
-  start(procs: readonly Proc[], p: Pick<Proc, "pid" | "startMs">, field: string, apply: (p: Proc) => void): PendingPick {
+  start(procs: readonly Proc[], p: ProcessIdentity, field: string, apply: (p: Proc) => void): PendingPick {
     const pick: PendingPick = { key: procKey(p), field, apply, left: Infinity };
     this.waiting.set(Picks.id(pick), pick);
     const live = procs.find((x) => procKey(x) === pick.key);

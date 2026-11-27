@@ -45,6 +45,7 @@ const p = (pid: number, name: string, o: Partial<Proc> = {}): Proc => ({
   priority: 8,
   cpuTimeMs: 0,
   startMs: 1_000_000 + pid,
+  creationTime: "1",
   ws: 0,
   commit: 0,
   flags: 0,
@@ -78,7 +79,7 @@ const keys = (rows: { key: string }[]) => rows.map((r) => r.key);
 
 describe("fromRaw", () => {
   it("reads the compact array the backend sends", () => {
-    expect(fromRaw([12, 4, "a.exe", 1.5, 2048, 10, 20, 7, 3, 99, 1, 8, 5000, 1700000000000, 4096, 8192, F_APP | F_ECO, "A window"])).toEqual({
+    expect(fromRaw([12, 4, "a.exe", 1.5, 2048, 10, 20, 7, 3, 99, 1, 8, 5000, "133444736000000001", 4096, 8192, F_APP | F_ECO, "A window"])).toEqual({
       pid: 12,
       ppid: 4,
       name: "a.exe",
@@ -93,6 +94,7 @@ describe("fromRaw", () => {
       priority: 8,
       cpuTimeMs: 5000,
       startMs: 1700000000000,
+      creationTime: "133444736000000001",
       ws: 4096,
       commit: 8192,
       flags: F_APP | F_ECO,
@@ -100,7 +102,15 @@ describe("fromRaw", () => {
     });
   });
   it("a reused PID is a different process", () => {
-    expect(procKey(p(8, "a", { startMs: 1 }))).not.toBe(procKey(p(8, "a", { startMs: 2 })));
+    expect(procKey(p(8, "a", { creationTime: "1" }))).not.toBe(procKey(p(8, "a", { creationTime: "2" })));
+  });
+  it("clears a selection when a same-named replacement starts within the same millisecond", () => {
+    const first = p(8, "worker.exe", { creationTime: "134000000000000001" });
+    const replacement = p(8, "worker.exe", { creationTime: "134000000000000002" });
+    const [selected] = buildRows([first], opts());
+    expect(buildRows([first], opts())[0].key).toBe(selected.key);
+    expect(buildRows([replacement], opts()).some((row) => row.key === selected.key)).toBe(false);
+    expect(membersOf([replacement], selected)).toEqual([]);
   });
 });
 
@@ -169,33 +179,33 @@ describe("buildRows, list (every process on its own row)", () => {
   const procs = [p(1, "b.exe", { cpu: 5, mem: 100 }), p(2, "a.exe", { cpu: 20, mem: 50 }), p(3, "c.exe", { cpu: 5, mem: 300 })];
 
   it("sorts by CPU, highest first", () => {
-    expect(keys(buildRows(procs, opts()))).toEqual(["p:2", "p:1", "p:3"]);
+    expect(keys(buildRows(procs, opts()))).toEqual(["p:2:1", "p:1:1", "p:3:1"]);
   });
   it("equal values keep a fixed order instead of shuffling", () => {
     const idle = [p(30, "x"), p(10, "y"), p(20, "z")];
-    expect(keys(buildRows(idle, opts()))).toEqual(["p:10", "p:20", "p:30"]);
-    expect(keys(buildRows([...idle].reverse(), opts()))).toEqual(["p:10", "p:20", "p:30"]);
+    expect(keys(buildRows(idle, opts()))).toEqual(["p:10:1", "p:20:1", "p:30:1"]);
+    expect(keys(buildRows([...idle].reverse(), opts()))).toEqual(["p:10:1", "p:20:1", "p:30:1"]);
   });
   it("sorts by name ascending without caring about case", () => {
     const rows = buildRows([p(1, "beta"), p(2, "Alpha"), p(3, "gamma")], opts({ sortKey: "name", desc: false }));
     expect(rows.map((r) => r.name)).toEqual(["Alpha", "beta", "gamma"]);
   });
   it("sorts by memory, and by disk counting reads and writes together", () => {
-    expect(keys(buildRows(procs, opts({ sortKey: "mem" })))).toEqual(["p:3", "p:1", "p:2"]);
+    expect(keys(buildRows(procs, opts({ sortKey: "mem" })))).toEqual(["p:3:1", "p:1:1", "p:2:1"]);
     const d = [p(1, "a", { diskRead: 5, diskWrite: 100 }), p(2, "b", { diskRead: 50 })];
-    expect(keys(buildRows(d, opts({ sortKey: "disk" })))).toEqual(["p:1", "p:2"]);
+    expect(keys(buildRows(d, opts({ sortKey: "disk" })))).toEqual(["p:1:1", "p:2:1"]);
   });
   it("sorts by a column that comes from the once-per-process facts", () => {
     const users: Record<number, string> = { 1: "zoe", 2: "SYSTEM", 3: "adam" };
     const info = (x: Proc) => facts({ user: users[x.pid] });
-    expect(keys(buildRows(procs, opts({ sortKey: "user", desc: false, info })))).toEqual(["p:3", "p:2", "p:1"]);
+    expect(keys(buildRows(procs, opts({ sortKey: "user", desc: false, info })))).toEqual(["p:3:1", "p:2:1", "p:1:1"]);
   });
   it("same-named processes are NOT gathered in this view", () => {
     const rows = buildRows([p(1, "x.exe"), p(2, "x.exe")], opts());
     expect(rows.map((r) => r.kind)).toEqual(["proc", "proc"]);
   });
   it("applies the search", () => {
-    expect(keys(buildRows(procs, opts({ filter: "a.e" })))).toEqual(["p:2"]);
+    expect(keys(buildRows(procs, opts({ filter: "a.e" })))).toEqual(["p:2:1"]);
   });
   it("an empty list gives no rows", () => {
     expect(buildRows([], opts())).toEqual([]);
@@ -215,7 +225,7 @@ describe("buildRows, by name (one row per program)", () => {
 
   it("puts same-named processes in one row with their totals", () => {
     const rows = buildRows(procs, view());
-    expect(keys(rows)).toEqual(["g:chrome.exe", "p:20"]);
+    expect(keys(rows)).toEqual(["g:chrome.exe", "p:20:1"]);
     expect(rows[0]).toMatchObject({ kind: "group", count: 3, cpu: 8, mem: 350, threads: 9, open: false, pid: 10 });
   });
   it("a program with one process stays a plain row", () => {
@@ -223,7 +233,7 @@ describe("buildRows, by name (one row per program)", () => {
   });
   it("an open group lists its processes under it, sorted the same way", () => {
     const rows = buildRows(procs, view({ expanded: new Set(["chrome.exe"]) }));
-    expect(keys(rows)).toEqual(["g:chrome.exe", "p:11", "p:10", "p:12", "p:20"]);
+    expect(keys(rows)).toEqual(["g:chrome.exe", "p:11:1", "p:10:1", "p:12:1", "p:20:1"]);
     expect(rows[1].child).toBe(true);
     expect(rows[4].child).toBe(false);
   });
@@ -236,7 +246,7 @@ describe("buildRows, by name (one row per program)", () => {
     expect(buildRows(g, view())[0].gpu).toBe(45);
   });
   it("search narrows what is grouped", () => {
-    expect(keys(buildRows(procs, view({ filter: "solo" })))).toEqual(["p:20"]);
+    expect(keys(buildRows(procs, view({ filter: "solo" })))).toEqual(["p:20:1"]);
   });
   it("shows the file name even when a friendly name is known", () => {
     const info = () => facts({ description: "Google Chrome" });
@@ -264,18 +274,18 @@ describe("buildRows, by type (Apps / Background / Windows)", () => {
 
   it("files every program under its heading, apps first", () => {
     const rows = buildRows(procs, view());
-    expect(keys(rows)).toEqual(["s:apps", "p:1", "s:background", "p:2", "p:4", "s:windows", "p:3"]);
+    expect(keys(rows)).toEqual(["s:apps", "p:1:1", "s:background", "p:2:1", "p:4:1", "s:windows", "p:3:1"]);
     expect(rows[0]).toMatchObject({ kind: "section", name: "Apps", count: 1, open: true });
     expect(rows[2]).toMatchObject({ kind: "section", name: "Background processes", count: 2 });
   });
   it("a folded heading stays, with its count, and hides its rows", () => {
     const rows = buildRows(procs, view({ collapsed: new Set(["background"]) }));
-    expect(keys(rows)).toEqual(["s:apps", "p:1", "s:background", "s:windows", "p:3"]);
+    expect(keys(rows)).toEqual(["s:apps", "p:1:1", "s:background", "s:windows", "p:3:1"]);
     expect(rows[2]).toMatchObject({ open: false, count: 2 });
   });
   it("a heading with nothing under it is left out", () => {
-    expect(keys(buildRows([procs[1]], view()))).toEqual(["s:background", "p:2"]);
-    expect(keys(buildRows(procs, view({ filter: "svc" })))).toEqual(["s:windows", "p:3"]);
+    expect(keys(buildRows([procs[1]], view()))).toEqual(["s:background", "p:2:1"]);
+    expect(keys(buildRows(procs, view({ filter: "svc" })))).toEqual(["s:windows", "p:3:1"]);
   });
   it("shows the friendly name, falling back to the file name", () => {
     const info = (x: Proc) => (x.pid === 1 ? facts({ description: "Microsoft Word" }) : undefined);
@@ -286,15 +296,15 @@ describe("buildRows, by type (Apps / Background / Windows)", () => {
   it("a program with one windowed process is an app, and its open rows carry window titles", () => {
     const chrome = [p(10, "chrome.exe", { flags: F_APP, title: "News - Chrome" }), p(11, "chrome.exe"), p(12, "chrome.exe")];
     const rows = buildRows(chrome, view({ expanded: new Set(["chrome.exe"]), sortKey: "pid", desc: false }));
-    expect(keys(rows)).toEqual(["s:apps", "g:chrome.exe", "p:10", "p:11", "p:12"]);
+    expect(keys(rows)).toEqual(["s:apps", "g:chrome.exe", "p:10:1", "p:11:1", "p:12:1"]);
     expect(rows[2].name).toBe("News - Chrome");
     expect(rows[3].name).toBe("chrome.exe");
   });
   it("sorting never moves a program out of its heading", () => {
     const rows = buildRows(procs, view({ sortKey: "cpu", desc: true }));
     // bg.exe uses the most CPU but still sits under Background, below the Apps heading.
-    expect(keys(rows).indexOf("p:2")).toBeGreaterThan(keys(rows).indexOf("s:background"));
-    expect(keys(rows)[1]).toBe("p:1");
+    expect(keys(rows).indexOf("p:2:1")).toBeGreaterThan(keys(rows).indexOf("s:background"));
+    expect(keys(rows)[1]).toBe("p:1:1");
   });
 });
 
@@ -470,7 +480,7 @@ describe("Picks (a change shows at once and survives the next refresh)", () => {
   it("a pick for a process that ended is dropped, and never lands on a new process with the same PID", () => {
     const picks = new Picks();
     picks.start(fresh(), p(1, "a"), "efficiency", eco);
-    const reused = [p(1, "other.exe", { startMs: 999 })];
+    const reused = [p(1, "other.exe", { creationTime: "999" })];
     picks.applyTo(reused);
     expect(reused[0].flags).toBe(0);
     expect(picks.size).toBe(0);

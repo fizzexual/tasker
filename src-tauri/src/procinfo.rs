@@ -1,11 +1,12 @@
 //! Facts about one process that do not change every second: where its program file is, who
 //! runs it, its command line, publisher, priority. Read on demand and remembered.
 
+use crate::error::{CmdError, CmdResult};
 use std::collections::HashMap;
 use std::ffi::c_void;
 use std::sync::{Mutex, OnceLock};
 use windows::core::{BOOL, PCWSTR, PWSTR};
-use windows::Win32::Foundation::{CloseHandle, GetLastError, HANDLE};
+use windows::Win32::Foundation::{CloseHandle, GetLastError, FILETIME, HANDLE};
 use windows::Win32::Security::{
     GetLengthSid, GetTokenInformation, LookupAccountSidW, TokenElevation, TokenUser, SID_NAME_USE, TOKEN_ELEVATION,
     TOKEN_QUERY, TOKEN_USER,
@@ -14,7 +15,7 @@ use windows::Win32::Storage::FileSystem::{
     GetFileVersionInfoSizeW, GetFileVersionInfoW, QueryDosDeviceW, VerQueryValueW,
 };
 use windows::Win32::System::Threading::{
-    GetPriorityClass, GetProcessAffinityMask, IsWow64Process2, OpenProcess, OpenProcessToken,
+    GetPriorityClass, GetProcessAffinityMask, GetProcessTimes, IsWow64Process2, OpenProcess, OpenProcessToken,
     QueryFullProcessImageNameW, PROCESS_ACCESS_RIGHTS, PROCESS_NAME_FORMAT, PROCESS_QUERY_LIMITED_INFORMATION,
 };
 
@@ -39,6 +40,27 @@ impl Drop for Handle {
 /// 87 = no such process).
 pub fn open(pid: u32, access: PROCESS_ACCESS_RIGHTS) -> Result<Handle, u32> {
     unsafe { OpenProcess(access, false, pid).map(Handle).map_err(|_| GetLastError().0) }
+}
+
+/// Keeps the verified process object open until its caller has finished the action.
+pub fn open_instance(pid: u32, creation_time: u64, access: PROCESS_ACCESS_RIGHTS, what: &str) -> CmdResult<Handle> {
+    let handle = open(pid, access | PROCESS_QUERY_LIMITED_INFORMATION).map_err(|code| CmdError::from_win32(code, what))?;
+    let mut created = FILETIME::default();
+    let mut exited = FILETIME::default();
+    let mut kernel = FILETIME::default();
+    let mut user = FILETIME::default();
+    unsafe { GetProcessTimes(handle.0, &mut created, &mut exited, &mut kernel, &mut user) }
+        .map_err(|e| CmdError::from_win32(e.code().0 as u32 & 0xffff, what))?;
+    let ticks = (u64::from(created.dwHighDateTime) << 32) | u64::from(created.dwLowDateTime);
+    if ticks == 0 || ticks != creation_time {
+        return Err(CmdError::not_found("That process"));
+    }
+    Ok(handle)
+}
+
+#[cfg(test)]
+pub(crate) fn test_creation_time(pid: u32) -> u64 {
+    crate::procs::list().into_iter().find(|p| p.pid == pid).expect("test process is running").create_time
 }
 
 /// Where a process's program file is. Works for system processes too: when Windows will not let

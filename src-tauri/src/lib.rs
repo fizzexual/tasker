@@ -278,9 +278,22 @@ fn system_info() -> SystemInfo {
     info
 }
 
+// A Windows FILETIME must cross the webview boundary as text to keep all 64 bits.
+#[derive(serde::Deserialize)]
+#[serde(try_from = "String")]
+struct CreationTime(u64);
+
+impl TryFrom<String> for CreationTime {
+    type Error = std::num::ParseIntError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        value.parse().map(Self)
+    }
+}
+
 #[tauri::command(async)]
-fn kill_process(pid: u32, name: String, tree: bool) -> CmdResult<procs::KillReport> {
-    procs::kill(pid, &name, tree)
+fn kill_process(pid: u32, name: String, creation_time: CreationTime, tree: bool) -> CmdResult<procs::KillReport> {
+    procs::kill(pid, &name, creation_time.0, tree)
 }
 
 #[tauri::command(async)]
@@ -333,37 +346,37 @@ fn proc_static(pids: Vec<u32>) -> Vec<procs::StaticInfo> {
 }
 
 #[tauri::command(async)]
-fn set_priority(state: State<AppState>, pid: u32, name: String, priority: String) -> CmdResult<&'static str> {
-    let now = actions::set_priority(pid, &name, &priority)?;
+fn set_priority(state: State<AppState>, pid: u32, name: String, creation_time: CreationTime, priority: String) -> CmdResult<&'static str> {
+    let now = actions::set_priority(pid, &name, creation_time.0, &priority)?;
     state.shared.update(|c| c.recheck = true);
     Ok(now)
 }
 
 /// Processor masks travel as text: the screen cannot hold 64-bit whole numbers exactly.
 #[tauri::command(async)]
-fn set_affinity(pid: u32, name: String, mask: String) -> CmdResult<String> {
+fn set_affinity(pid: u32, name: String, creation_time: CreationTime, mask: String) -> CmdResult<String> {
     let mask = mask.parse::<u64>().map_err(|_| CmdError::invalid("Unknown processor selection."))?;
-    actions::set_affinity(pid, &name, mask).map(|m| m.to_string())
+    actions::set_affinity(pid, &name, creation_time.0, mask).map(|m| m.to_string())
 }
 
 #[tauri::command(async)]
-fn set_efficiency(state: State<AppState>, pid: u32, name: String, on: bool) -> CmdResult<()> {
-    actions::set_efficiency(pid, &name, on)?;
+fn set_efficiency(state: State<AppState>, pid: u32, name: String, creation_time: CreationTime, on: bool) -> CmdResult<()> {
+    actions::set_efficiency(pid, &name, creation_time.0, on)?;
     state.shared.update(|c| c.recheck = true);
     Ok(())
 }
 
 #[tauri::command(async)]
-fn set_paused(state: State<AppState>, pid: u32, name: String, pause: bool) -> CmdResult<()> {
-    actions::set_paused(pid, &name, pause, std::process::id())?;
+fn set_paused(state: State<AppState>, pid: u32, name: String, creation_time: CreationTime, pause: bool) -> CmdResult<()> {
+    actions::set_paused(pid, &name, creation_time.0, pause, std::process::id())?;
     state.shared.update(|c| c.recheck = true);
     Ok(())
 }
 
 #[tauri::command]
-async fn create_dump(pid: u32, name: String) -> CmdResult<String> {
+async fn create_dump(pid: u32, name: String, creation_time: CreationTime) -> CmdResult<String> {
     // Writing a large program's memory to disk can take a while.
-    tauri::async_runtime::spawn_blocking(move || actions::create_dump(pid, &name))
+    tauri::async_runtime::spawn_blocking(move || actions::create_dump(pid, &name, creation_time.0))
         .await
         .map_err(|e| CmdError::failed(format!("Internal error: {e}")))?
 }

@@ -17,6 +17,7 @@ const p = (pid: number, name: string, o: Partial<Proc> = {}): Proc => ({
   priority: 8,
   cpuTimeMs: 0,
   startMs: 0,
+  creationTime: "0",
   ws: 0,
   commit: 0,
   flags: 0,
