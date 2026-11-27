@@ -152,7 +152,7 @@ tools/make-logo.py   draws the logo and writes every icon size
   Settings has "Restart as administrator" for that, which also allows actions on protected
   processes.
 - **Memory.** Higher than Windows Task Manager, see the table above.
-- **No download yet.** There is no published installer; build it with the four commands above.
+- **Download.** Get the Windows x64 installer and its SHA-256 checksum from [GitHub Releases](https://github.com/fizzexual/tasker/releases/latest).
 
 ## License
 
